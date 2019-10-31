@@ -1,7 +1,7 @@
 #!/usr/bin/env python 
 
 import knockadapt
-from knockadapt.knockoff_stats import group_lasso_LCD, calc_nongroup_LSM, group_lasso_LSM
+from knockadapt.knockoff_stats import group_lasso_LCD, calc_nongroup_LSM#, group_lasso_LSM
 
 import numpy as np
 import pandas as pd
@@ -13,11 +13,6 @@ import matplotlib.pyplot as plt
 
 import os
 import experiments
-
-import warnings
-warnings.filterwarnings("ignore")
-from plotnine import *
-warnings.simplefilter("always")
 
 
 # GLOBALS ---------------------------------- 
@@ -48,6 +43,10 @@ def plot_measurement_type(melted_results,
                           fname = None,
                           hline = None):
     """ Plotting and saving function """
+    import warnings
+    warnings.filterwarnings("ignore")
+    from plotnine import *
+    warnings.simplefilter("always")
 
     results = melted_results.loc[melted_results['measurement'] == meas_type]
     results = results.rename(columns = {'value':meas_type})
