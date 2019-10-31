@@ -6,7 +6,7 @@ warnings.simplefilter("always")
 def plot_measurement_type(melted_results, 
                           meas_type = 'power',
                           fname = None,
-                          hline = None):
+                          yintercept = None):
     """ Plotting and saving function """
 
     results = melted_results.loc[melted_results['measurement'] == meas_type]
@@ -19,14 +19,17 @@ def plot_measurement_type(melted_results,
         + geom_boxplot(position='dodge')
         + facet_grid('~link_method')
     )
-    if hline is not None:
+    if yintercept is not None:
+        hline = geom_hline(
+            aes(yintercept = yintercept), linetype="dashed", color = "red"
+        )
         g1 = g1 + hline
     
     if fname is not None:
         g1 = g1 + labs(title = fname)
         fname1 = fname + '_' + meas_type + '_v1.SVG'
         g1.save(fname1)
-    print(g1)
+    #print(g1)
     
     g2 = (
         ggplot(results, aes(
@@ -38,11 +41,14 @@ def plot_measurement_type(melted_results,
         + facet_grid('~link_method')
     )
     
-    if hline is not None:
+    if yintercept is not None:
+        hline = geom_hline(
+            aes(yintercept = yintercept), linetype="dashed", color = "red"
+        )
         g2 = g2 + hline
         
     if fname is not None:
         g2 = g2 + labs(title = fname)
         fname2 = fname + '_' + meas_type + '_v2.SVG'
         g2.save(fname2)        
-    print(g2)
+    #print(g2)

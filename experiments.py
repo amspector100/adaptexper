@@ -244,9 +244,6 @@ def compare_methods(
             new_name = methodname + "_" + oldname
             link_methods[i] = new_name
             link_method_dict[new_name] = oldname
-    print(link_method_dict)
-    print(link_methods)
-
 
     # Create links, groups, cutoffs
     links = {

@@ -1,6 +1,12 @@
 #!/usr/bin/env python 
 
-import knockadapt
+try:
+  import knockadapt
+except ImportError:
+  import sys
+  sys.path.insert(0, "/home/asher/Documents/Research/Knockoff/adaptive/knockadapt")
+  import knockadapt
+
 from knockadapt.knockoff_stats import group_lasso_LCD, calc_nongroup_LSM#, group_lasso_LSM
 
 import numpy as np
@@ -11,39 +17,110 @@ import scipy.cluster.hierarchy as hierarchy
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+import sys
 import os
+import argparse
 import experiments
 
 
-# GLOBALS ---------------------------------- 
-# I think it's better to modify here
-# than with compiler flags, since these kwargs
-# are extremely complicated.
-seed = 110
-sample_kwargs = {'coeff_size':10, 
-                 'method':'AR1', 
-                 'a':5, 
-                 'b':1}
-S_kwargs = {
-    'objective':'norm', 'norm_type':2, 'verbose':True, 'sdp_verbose':False
-}
-S_methods = [('ASDP_auto', {'method':'ASDP'}), 
-             ('ASDP3', {'method':'ASDP', 'alpha':3,}),
-             ('ASDP5', {'method':'ASDP', 'alpha':5,})]
-link_methods = ['average']*len(S_methods)
+def main(args):
+    """ Simulates power and FDR of various knockoff methods """
 
-n = 100
-p = 200
-q = 0.25
-num_datasets = 3
+    description = 'Simulates power, fdr of various knockoff methods'
+    parser = argparse.ArgumentParser(description = description)
 
-def main(n, p, 
-         q = 0.25, 
-         seed = seed,
-         num_datasets = 5,
-         sample_kwargs = sample_kwargs,
-         plot = False):
-    """ Main """
+    parser.add_argument('--n', dest = 'n',
+                        type=int, 
+                        help='Number of observations (default: 100)',
+                        default = 100)
+
+    parser.add_argument('--p', dest = 'p',
+                        type=int, 
+                        help='Number of covariates/features (default: 50)',
+                        default = 50)
+
+    parser.add_argument('--q', dest = 'q',
+                        type=int, 
+                        help='Level of FDR control (default: .25)',
+                        default = 0.25)
+
+    parser.add_argument('--seed', dest = 'seed',
+                        type=int, 
+                        help='Random seed for reproducibility (default: 110)',
+                        default = 110)
+
+    parser.add_argument('--num_datasets', dest = 'num_datasets',
+                        type=float, 
+                        help='Number of datasets to average over (default: 5)',
+                        default = 5)
+
+    parser.add_argument('--plot', dest = 'plot',
+                        type=bool, 
+                        help='If true, plot results via plotnine (default: False)',
+                        default = False)
+
+    parser.add_argument('--sdp', dest = 'sdp',
+                        type=str, 
+                        help='If true, use full semidefinite programming (default: True)',
+                        default = True)
+
+    parser.add_argument('--asdp', dest = 'asdp',
+                        type=str, 
+                        help='If true, use asdp instead of/in addition to SDP (default: False)',
+                        default = False)
+
+    parser.add_argument('--covmethod', dest = 'covmethod',
+                        type=str, 
+                        help='Method for generating cov matrix: one of "AR1" (default) or "ErdosRenyi"',
+                        default = 'AR1')
+
+    parser.add_argument('--a', dest = 'a',
+                        type=float,
+                        help='a parameter when samplign AR1 correlations from Beta(a,b) (default: 1)',
+                        default = 1)
+
+    parser.add_argument('--b', dest = 'b',
+                        type=float,
+                        help='b parameter when samplign AR1 correlations from Beta(a,b) (default: 1)',
+                        default = 1)
+
+    parser.add_argument('--coef', dest = 'coef',
+                        type=float,
+                        help='Size of true coefficients relative to noise level (default: 10)',
+                        default = 10)
+
+
+    args = parser.parse_args()
+
+    # Retreive values
+    n = args.n
+    p = args.p
+    q = args.q
+    seed = args.seed
+    num_datasets = args.num_datasets
+    plot = args.plot
+
+    # Generate S methods
+    S_kwargs = {'objective':'norm', 
+                'norm_type':2, 
+                'verbose':True, 
+                'sdp_verbose':False}
+
+    if args.sdp:
+      S_methods = [('SDP', {'method':'SDP'})]
+    else:
+      S_methods = []
+    if args.asdp:
+      S_methods.append(('ASDP_auto', {'method':'ASDP'}))
+    else:
+      pass
+
+    # Sample Kwargs
+    sample_kwargs = {}
+    sample_kwargs['method'] = args.covmethod
+    sample_kwargs['a'] = args.a
+    sample_kwargs['b'] = args.b
+    sample_kwargs['coeff_size'] = args.coef
     
     # Generate corr_matrix, Q
     np.random.seed(seed)
@@ -51,6 +128,9 @@ def main(n, p,
         n = n, p = p, **sample_kwargs
     )
     
+    link_methods = ['average']*max(1, len(S_methods))
+
+
     # Run method comparison function
     output = experiments.compare_methods(
         corr_matrix, 
@@ -68,10 +148,9 @@ def main(n, p,
 
     melted_results, oracle_results, S_matrixes = output
     id_vars = ['link_method', 'feature_fn', 'split_type', 'measurement']
-    # method_means = melted_results.groupby(id_vars)['value'].mean().reset_index()
     
     # Construct a (long) file name
-    fname = f"figures/ASDP/seed{seed}_n{n}_p{p}_N{num_datasets}/"
+    fname = f"figures/v2/seed{seed}_n{n}_p{p}_N{num_datasets}/"
     if not os.path.exists(fname):
         os.makedirs(fname)
     sample_string = [
@@ -92,19 +171,13 @@ def main(n, p,
         plot_measurement_type(melted_results, 
                               meas_type = 'power', 
                               fname = fname)
-        hline = geom_hline(aes(yintercept = q), 
-                           linetype="dashed",
-                           color = "red")
+
         plot_measurement_type(melted_results, 
                               meas_type = 'fdr',
-                              hline = hline,
+                              yintercept = q,
                               fname = fname)        
 
+    return melted_results 
 
 if __name__ == '__main__':
-    main(n = n,
-         p = p,
-         seed = seed, 
-         num_datasets = num_datasets,
-         q = q,
-         sample_kwargs = sample_kwargs)
+    sys.exit(main(sys.argv))
