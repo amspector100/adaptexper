@@ -439,11 +439,11 @@ def compare_methods(
                 selected_grouping = link_groups[selected_cutoff]
 
                 # Now test to see what discoveries we find
-                testX = X[int(n/2):]
-                testy = y[int(n/2):]
+                # This involves knockoff recycling 
                 spl_fdps, spl_powers, spl_hat_powers = knockadapt.adaptive.evaluate_grouping(
-                    X = testX, y = testy, corr_matrix = corr_matrix, groups = groups, q = q, 
+                    X = X, y = y, corr_matrix = corr_matrix, groups = groups, q = q, 
                     non_nulls = beta, S = S, copies = copies, verbose = False,
+                    recycle_up_to = int(n/2),
                     feature_stat_fn = feature_stat_fn
                 )
                 actual_fdr = spl_fdps.mean()

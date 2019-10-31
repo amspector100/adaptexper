@@ -50,7 +50,7 @@ def main(args):
                         default = 110)
 
     parser.add_argument('--num_datasets', dest = 'num_datasets',
-                        type=float, 
+                        type=int, 
                         help='Number of datasets to average over (default: 5)',
                         default = 5)
 
@@ -118,8 +118,9 @@ def main(args):
     # Sample Kwargs
     sample_kwargs = {}
     sample_kwargs['method'] = args.covmethod
-    sample_kwargs['a'] = args.a
-    sample_kwargs['b'] = args.b
+    if args.covmethod.lower() == 'ar1':
+      sample_kwargs['a'] = args.a
+      sample_kwargs['b'] = args.b
     sample_kwargs['coeff_size'] = args.coef
     
     # Generate corr_matrix, Q

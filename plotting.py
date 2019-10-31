@@ -52,3 +52,18 @@ def plot_measurement_type(melted_results,
         fname2 = fname + '_' + meas_type + '_v2.SVG'
         g2.save(fname2)        
     #print(g2)
+    return None
+
+
+# def plot_csv(csv_path):
+#    """ Convenience function to prevent Odyssey from having to plot"""
+#     fname = csv_path.split('.')[0]
+#     melted_results = pd.read_csv(csv_path)
+#     plot_measurement_type(melted_results, 
+#                           meas_type = 'power', 
+#                           fname = fname)
+
+#     plot_measurement_type(melted_results, 
+#                           meas_type = 'fdr',
+#                           yintercept = q,
+#                           fname = fname)   

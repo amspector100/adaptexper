@@ -79,6 +79,11 @@ we should NOT take the expectation over the X's in this case.
 Use frobenius norm for now, come back to this later if it seems 
 unhappy.
 
+# Contracts with Tejal
+
+(1) I'm long at 0.55 for Ben/Hemanth, 10 contracts at $1
+(2) I'm short at 0.95 for Ed Bracey, 10 contracts at $1
+
 
 ## Implementation Notes
 - Need to be able to submit S as a parameter to knockoff generator
@@ -148,7 +153,78 @@ will be the smallest partition.
 
 1. Make sure you 
 
-# Contracts with Tejal
+# Cluster thoguhts
+1. Right place
+1.5 Where to store, how to move
+Can I git clone in the batch script? 
+2. Best way to log, can I just print?
+3. Paralellization tricks
+4. 
 
-(1) I'm long at 0.55 for Ben/Hemanth, 10 contracts at $1
-(2) I'm short at 0.95 for Ed Bracey, 10 contracts at $1
+ASDP
+resuse
+
+# Other benchmarks to test sample reuse against
+1. Test against an oracle which 
+gets ideal partitions for n/2 
+and then both (i) it recycles the other
+half of the data and (ii) it does not
+2. p = 300, ErdosRenyi graph
+3. Optimal cutoff logarithmic in n
+Doubling n actually barely changes 
+the level that you want. In simple
+cases it should look like: scaling
+should look like sqrt(n).
+
+
+What grouping is good given n
+
+# How to combine groups
+
+Define levels by the average height
+of each cluster, average correlation,
+etc. 
+
+Do both: 
+
+# Scale up: answer questions we've
+# really been wondering which have been
+# limited by p. Same questions 
+# Big enough p that makes a difference
+
+# Plots: line plots with something (n, p)
+# on the x axis, power on the y axis,
+# and a few different curves for different
+# methods. (FDR plot as well to check
+# things are working)
+
+- X axis: varies n, let p be 1000
+(Non-group SDP, 1000 is super easy)
+- Take advantage of 32 cores on single 
+cluster
+- One time cost against many many simulations,
+wouldn't bat an eye if it took a few
+days to run.
+
+256 gigs of ram, 32 core per node
+8 nodes total
+janson big-mem partition: one more node w/ 32 cores, 1 T of ram
+
+Other things to keep track of:
+	- What oracle cutoffs are (compare them)
+	- See what double-dipping one finds,
+	what non-double-dipping one finds,
+	etc. 
+	- Would like to know if the oracle has
+	a correlation cutoff, distribution over
+	group sizes, what is the distribution over all of those things for the two methods we have 
+
+Figure out how sample-split compares to 
+oracle
+
+Try to break double-dipping if you can
+
+Explore other oracles so we understand
+why sample-reuse seems to be doing so well
+
+Small example of cluster use as well.
