@@ -3,6 +3,7 @@
 # Don't save data
 data/*
 figures/*
+*.ipynb
 
 
 # _____ R Defaults _______
