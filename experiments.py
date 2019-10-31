@@ -202,6 +202,7 @@ def compare_methods(
                     q = 0.25, 
                     num_data_samples = 10,
                     link_methods = ['complete', 'single', 'average'],
+                    S_methods = None,
                     split = True,
                     sample_kwargs = {'coeff_size':10,},
                     feature_fns = {'LSM':calc_nongroup_LSM},
@@ -211,7 +212,10 @@ def compare_methods(
                     reduction = 10,
                     ):
     """ 
-    In the future, could add an 'S_methods' optional arg
+    S_methods arg optionally allows you to add extra kwargs (e.g. ASDP instead of SDP)
+    for each link method. Should be a list of tuples, of the form
+    [(methodname, method_kwargs)], and it should be the same length as 
+    link_methods.
     """
 
     # Possibly make reproducible, also time
@@ -230,10 +234,24 @@ def compare_methods(
        Q = Q, beta = beta, **sample_kwargs
     )
 
+    # Sometimes the link methods are the same because we're also comparing
+    # S generation methods (e.g. ASDP vs SDP), so might have to rename them
+    link_method_dict = {}
+    if S_methods is not None:
+        for i in range(len(link_methods)):
+            methodname = S_methods[i][0]
+            oldname = link_methods[i]
+            new_name = methodname + "_" + oldname
+            link_methods[i] = new_name
+            link_method_dict[new_name] = oldname
+    print(link_method_dict)
+    print(link_methods)
+
+
     # Create links, groups, cutoffs
     links = {
         link_method:knockadapt.graphs.create_correlation_tree(
-            corr_matrix, method = link_method
+            corr_matrix, method = link_method_dict[link_method]
         ) for link_method in link_methods
     }
 
@@ -264,8 +282,13 @@ def compare_methods(
         all_Ms[link_method] = Ms
 
     # Create S matrices: dictionary of dictionaries (link by cutoff)
+    # This is a bit hacky, but we can associate a different S_method
+    # with each link method if we want.
+    if S_methods is None:
+        S_methods = [{} for _ in link_methods]
+
     S_matrixes = {link_method:{} for link_method in link_methods}
-    for link_method in link_methods:
+    for link_method, S_method in zip(link_methods, S_methods):
 
         # Retrive groups/cutoffs for this link method
         link_method_groups = all_groups[link_method]
@@ -279,7 +302,8 @@ def compare_methods(
             groups = link_method_groups[cutoff]
             _, S_group = knockadapt.knockoffs.group_gaussian_knockoffs(
                 X = X, Sigma = corr_matrix, groups = groups,
-                invSigma = Q, return_S = True, **S_kwargs
+                invSigma = Q, return_S = True, **S_kwargs,
+                **S_method[1]
             )
             S_matrixes[link_method][cutoff] = S_group
 
