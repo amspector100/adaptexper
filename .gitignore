@@ -2,6 +2,7 @@
 
 # Don't save data
 data/*
+figures/*
 
 
 # _____ R Defaults _______
