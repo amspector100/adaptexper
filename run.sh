@@ -11,7 +11,8 @@
 # Install python/anaconda, activate base environment
 module purge
 module load Anaconda3/5.0.1-fasrc02
-conda info --envs
+conda create -n knockadapt1 python=3.6
+source activate knockadapt1
 
 # Install requirements
 pip install -r requirements.txt
