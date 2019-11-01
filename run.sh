@@ -11,12 +11,10 @@
 # Install python/anaconda, activate base environment
 module purge
 module load Anaconda3/5.0.1-fasrc02
-source activate base
+conda info --envs
 
-# Install group_lasso and run file
-pip install group_lasso
+# Install requirements
+pip install -r requirements.txt
 python3 main.py --n 50 --p 20 --num_datasets 10 --covmethod 'ErdosRenyi' 
-
 module purge
 
-# Just use SCP on terminal

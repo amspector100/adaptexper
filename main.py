@@ -14,15 +14,16 @@ try:
 	import knockadapt
 except ImportError:
 	# This is super hacky, will no longer be necessary after development ends
+	sys.stdout.write('Here1')
 	file_directory = os.path.dirname(os.path.abspath(__file__))
 	parent_directory = os.path.split(file_directory)[0]
 	knockoff_directory = parent_directory + '/knockadapt'
+	sys.stdout.write(f'Knckoff dir is {knockoff_directory}')
 	sys.path.insert(0, os.path.abspath(knockoff_directory))
 	import knockadapt
 	from knockadapt.knockoff_stats import group_lasso_LCD, calc_nongroup_LSM#, group_lasso_LSM
 	
 import experiments
-
 
 
 def main(args):
