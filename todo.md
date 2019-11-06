@@ -228,3 +228,6 @@ Explore other oracles so we understand
 why sample-reuse seems to be doing so well
 
 Small example of cluster use as well.
+
+# Notes
+1. Confirmed that the S matrix generated is truly independent of n

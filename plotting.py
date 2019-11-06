@@ -71,10 +71,57 @@ def plot_csv(csv_path, q = None):
 	plot_measurement_type(melted_results, 
 						  meas_type = 'fdr',
 						  yintercept = q,
-						  fname = fname)   
+						  fname = fname)  
+
+def plot_n_curve(path): 
+	""" Creates FDR/power curve plots as n varies """
+
+	csv_path = path + '.csv'
+	q_path = path + '_q.txt'
+	with open(q_path, 'r') as thefile:
+		q = thefile.read()
+	q = float(q)
+	results = pd.read_csv(csv_path)
+
+	# Plot power
+	power_path = path + '_power.SVG'
+	power_results = results.loc[results['measurement'] == 'power']
+	power_results = power_results.rename(columns = {'value':'power'})
+	g2 = (
+		ggplot(power_results, aes(
+			x = 'n', y = 'power', color = 'split_type')
+		)
+		+ stat_summary(geom = 'line')
+		+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_boot')
+		+ stat_summary(aes(shape = 'split_type'), geom = 'point', size = 2.5)
+		+ facet_grid('feature_fn~link_method')
+		+ labs(title = path)
+	)
+	g2.save(power_path)
+
+	# Plot FDR
+	fdr_path = path + '_fdr.SVG'
+	fdr_results = results.loc[results['measurement'] == 'fdr']
+	fdr_results = fdr_results.rename(columns = {'value':'fdr'})
+	hline = geom_hline(
+		aes(yintercept = q), linetype="dashed", color = "red"
+	)
+	g2 = (
+		ggplot(fdr_results, aes(
+			x = 'n', y = 'fdr', color = 'split_type')
+		)
+		+ stat_summary(geom = 'line')
+		+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_boot')
+		+ stat_summary(aes(shape = 'split_type'), geom = 'point', size = 2.5)
+		+ facet_grid('feature_fn~link_method')
+		+ hline
+		+ labs(title = path)
+	)
+	g2.save(fdr_path)
+
 
 if __name__ == '__main__':
 	if len(sys.argv) < 2:
-		print('Please specify the path of the csv to create plots for')
+		print('Please specify the path to create plots for')
 	else:
-		sys.exit(plot_csv(sys.argv[1]))
+		sys.exit(plot_n_curve(sys.argv[1]))

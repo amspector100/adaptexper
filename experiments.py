@@ -212,6 +212,7 @@ def compare_methods(
                     copies = 1,
                     seed = 110,
                     reduction = 10,
+                    time0 = None,
                     ):
     """ 
     S_methods arg optionally allows you to add extra kwargs (e.g. ASDP instead of SDP)
@@ -221,7 +222,8 @@ def compare_methods(
     """
 
     # Possibly make reproducible, also time
-    time0 = time.time()
+    if time0 is None:
+        time0 = time.time()
     if seed is not None:
         np.random.seed(seed)
 
@@ -294,7 +296,7 @@ def compare_methods(
         cutoffs = all_cutoffs[link_method]
 
         # Progress report
-        sys.stdout.write(f'Generating S matrices for {link_method} now, time is {time.time() - time0}')
+        sys.stdout.write(f'Generating/retreiving S matrices for {link_method} now, time is {time.time() - time0}')
 
         # Add S matrixes
         for cutoff in cutoffs:
@@ -331,7 +333,7 @@ def compare_methods(
     sys.stdout.write("Picking the best oracle!")
     for j in range(num_data_samples):
 
-        sys.stdout.write(f'At data sample {j} for oracle, time is {time.time() - time0}')
+        print(f'At data sample {j} for oracle, time is {time.time() - time0}')
 
         # Create X and y
         X, y, beta2, Q2, corr_matrix2 = knockadapt.graphs.sample_data(

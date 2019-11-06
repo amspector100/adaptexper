@@ -3,6 +3,7 @@
 import sys
 import os
 import argparse
+import time
 
 import numpy as np
 import pandas as pd
@@ -17,7 +18,7 @@ except ImportError:
 	file_directory = os.path.dirname(os.path.abspath(__file__))
 	parent_directory = os.path.split(file_directory)[0]
 	knockoff_directory = parent_directory + '/knockadapt'
-	sys.stdout.write(f'Knckoff dir is {knockoff_directory}')
+	sys.stdout.write(f'Knockoff dir is {knockoff_directory}')
 	sys.path.insert(0, os.path.abspath(knockoff_directory))
 	import knockadapt
 	from knockadapt.knockoff_stats import group_lasso_LCD, calc_nongroup_LSM#, group_lasso_LSM
@@ -33,7 +34,7 @@ def main(args):
 
 	parser.add_argument('--n', dest = 'n',
 						type=int, 
-						help='Number of observations (default: 100)',
+						help='Number of observations (default: 100). If n = 0, will run 10 sims between p/5 and 5p',
 						default = 100)
 
 	parser.add_argument('--p', dest = 'p',
@@ -124,63 +125,104 @@ def main(args):
 		sample_kwargs['a'] = args.a
 		sample_kwargs['b'] = args.b
 	sample_kwargs['coeff_size'] = args.coef
-	
-	# Generate corr_matrix, Q
-	np.random.seed(seed)
-	X0, y0, beta, Q, corr_matrix = knockadapt.graphs.sample_data(
-		n = n, p = p, **sample_kwargs
-	)
-	
-	link_methods = ['average']*max(1, len(S_methods))
 
-
-	# Run method comparison function
-	output = experiments.compare_methods(
-		corr_matrix, 
-		beta, 
-		Q = Q, 
-		n = n,
-		q = q, 
-		S_methods = S_methods,
-		feature_fns = {'LSM':calc_nongroup_LSM, 'group_LCD':group_lasso_LCD},
-		link_methods = link_methods,
-		S_kwargs = S_kwargs,
-		num_data_samples = num_datasets,
-		sample_kwargs = sample_kwargs
-	)
-
-	melted_results, oracle_results, S_matrixes = output
-	id_vars = ['link_method', 'feature_fn', 'split_type', 'measurement']
-	
-	# Construct a (long) file name
-	fname = f"figures/v2/seed{seed}_n{n}_p{p}_N{num_datasets}/"
-	if not os.path.exists(fname):
-		os.makedirs(fname)
+	# Initialize save directories
+	all_fname = f"figures/v3/seed{seed}_p{p}_N{num_datasets}/"
+	if not os.path.exists(all_fname):
+		os.makedirs(all_fname)
 	sample_string = [
 		('').join([k.replace('_', ''), str(sample_kwargs[k])]) for k in sample_kwargs
 	]
 	sample_string = ('_').join(sample_string)
-	fname += sample_string
+	all_fname += sample_string
+	all_fname_csv = all_fname + '.csv'
+
+	# Reminders
+	all_name_q = all_fname + '_q.txt'
+	with open(all_name_q, 'w') as thefile:
+		thefile.write(str(q))
+
+	# Fixed n 
+	if n != 0:
+		ns = [n]
+	else:
+		ns = np.linspace(p/5, 5*p, 7)
+		ns = [int(n) for n in ns]
+
+	# Timing
+	time0 = time.time()
+
+	# Generate corr_matrix, Q
+	np.random.seed(seed)
+	_, _, beta, Q, corr_matrix = knockadapt.graphs.sample_data(
+		n = ns[0], p = p, **sample_kwargs
+	)
 	
-	# Save CSV
-	fname_csv = fname + '.csv'
-	melted_results.to_csv(fname_csv)
-	
-	# Plot and save
-	if plot:
+	# Initialize all result dataframe
+	all_results = pd.DataFrame()
 
-		# Avoid messy plotnine dependency if not plotting
-		from plotting import plot_measurement_type
-		plot_measurement_type(melted_results, 
-								meas_type = 'power', 
-								fname = fname)
+	# Loop through ns: no need to parallelize this yet
+	# since each n takes quite a while
+	for n in ns:
 
-		plot_measurement_type(melted_results, 
-								meas_type = 'fdr',
-								yintercept = q,
-								fname = fname)        
+		# Log that we've made it this far
+		print(f'Running simulation for n = {n}')
 
-	return melted_results 
+		# Run method comparison function - note the 
+		# S matrices should be cached 
+		link_methods = ['average']*max(1, len(S_methods))
+		output = experiments.compare_methods(
+			corr_matrix, 
+			beta, 
+			Q = Q, 
+			n = n,
+			q = q, 
+			S_methods = S_methods,
+			feature_fns = {'LSM':calc_nongroup_LSM, 'group_LCD':group_lasso_LCD},
+			link_methods = link_methods,
+			S_kwargs = S_kwargs,
+			num_data_samples = num_datasets,
+			sample_kwargs = sample_kwargs,
+			time0 = time0
+		)
+
+		melted_results, oracle_results, S_matrixes = output
+		id_vars = ['link_method', 'feature_fn', 'split_type', 'measurement']
+		
+		# Construct a (long) filename)
+		fname = f"figures/v2/seed{seed}_n{n}_p{p}_N{num_datasets}/"
+		if not os.path.exists(fname):
+			os.makedirs(fname)
+		fname += sample_string
+
+		# Save CSV
+		fname_csv = fname + '.csv'
+		melted_results.to_csv(fname_csv)
+		
+		# Plot and save
+		if plot:
+
+			# Avoid messy plotnine dependency if not plotting
+			from plotting import plot_measurement_type
+			plot_measurement_type(melted_results, 
+									meas_type = 'power', 
+									fname = fname)
+
+			plot_measurement_type(melted_results, 
+									meas_type = 'fdr',
+									yintercept = q,
+									fname = fname)     
+
+		# Aggregate with all other data
+		melted_results['n'] = n
+		all_results = pd.concat(
+			[all_results, melted_results], axis = 'index'
+		)
+
+		# Cache just in case
+		all_results.to_csv(all_fname_csv)
+
+	return all_results 
 
 if __name__ == '__main__':
 	sys.exit(main(sys.argv))
