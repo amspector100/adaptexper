@@ -21,8 +21,8 @@ except ImportError:
 	sys.stdout.write(f'Knockoff dir is {knockoff_directory}')
 	sys.path.insert(0, os.path.abspath(knockoff_directory))
 	import knockadapt
-	from knockadapt.knockoff_stats import group_lasso_LCD, calc_nongroup_LSM#, group_lasso_LSM
-	
+	from knockadapt.knockoff_stats import group_lasso_LCD
+		
 import experiments
 
 
@@ -92,6 +92,11 @@ def main(args):
 						help='Size of true coefficients relative to noise level (default: 10)',
 						default = 10)
 
+	parser.add_argument('--scache', dest = 'scache',
+					type=bool,
+					help='If true, only compute S matrices, do nothing else (default: False)',
+					default = False)
+
 
 	args = parser.parse_args()
 
@@ -102,6 +107,7 @@ def main(args):
 	seed = args.seed
 	num_datasets = args.num_datasets
 	plot = args.plot
+	scache = args.scache
 
 	# Generate S methods
 	S_kwargs = {'objective':'norm', 
@@ -178,13 +184,17 @@ def main(args):
 			n = n,
 			q = q, 
 			S_methods = S_methods,
-			feature_fns = {'LSM':calc_nongroup_LSM, 'group_LCD':group_lasso_LCD},
+			feature_fns = {'group_LCD':group_lasso_LCD},
 			link_methods = link_methods,
 			S_kwargs = S_kwargs,
 			num_data_samples = num_datasets,
 			sample_kwargs = sample_kwargs,
-			time0 = time0
+			time0 = time0,
+			scache_only = scache
 		)
+		# Possibly exit if we only need to compute S matrices
+		if scache:
+			return None
 
 		melted_results, oracle_results, S_matrixes = output
 		id_vars = ['link_method', 'feature_fn', 'split_type', 'measurement']

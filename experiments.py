@@ -213,12 +213,14 @@ def compare_methods(
                     seed = 110,
                     reduction = 10,
                     time0 = None,
+                    scache_only = False
                     ):
     """ 
     S_methods arg optionally allows you to add extra kwargs (e.g. ASDP instead of SDP)
     for each link method. Should be a list of tuples, of the form
     [(methodname, method_kwargs)], and it should be the same length as 
     link_methods.
+    scache_only: If True, only compute the S_group matrices, then stop.
     """
 
     # Possibly make reproducible, also time
@@ -324,6 +326,9 @@ def compare_methods(
                                sample_kwargs)
 
             S_matrixes[link_method][cutoff] = S_group
+
+    if scache_only:
+        return None
 
     # Construct oracle (curse of dimensionality applies here)
     feature_methods = [fname for fname in feature_fns]
