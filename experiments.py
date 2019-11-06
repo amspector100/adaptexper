@@ -9,6 +9,8 @@ import time
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from smatrices import cache_S_matrix, load_S_matrix
+
 
 # Note full avg power is over all groupings
 OUTPUT_COLUMNS = [
@@ -297,11 +299,28 @@ def compare_methods(
         # Add S matrixes
         for cutoff in cutoffs:
             groups = link_method_groups[cutoff]
-            _, S_group = knockadapt.knockoffs.group_gaussian_knockoffs(
-                X = X, Sigma = corr_matrix, groups = groups,
-                invSigma = Q, return_S = True, **S_kwargs,
-                **S_method[1]
-            )
+
+            # Possibly load from text file
+            S_group = load_S_matrix(p, seed, 
+                                    cutoff, link_method,
+                                    sample_kwargs)
+
+            # Else compute the matrix
+            if S_group is None:
+
+                _, S_group = knockadapt.knockoffs.group_gaussian_knockoffs(
+                    X = X, Sigma = corr_matrix, groups = groups,
+                    invSigma = Q, return_S = True, **S_kwargs,
+                    **S_method[1]
+                )
+
+                # But save it!
+                cache_S_matrix(S_group, 
+                               p, seed, 
+                               cutoff, 
+                               link_method, 
+                               sample_kwargs)
+
             S_matrixes[link_method][cutoff] = S_group
 
     # Construct oracle (curse of dimensionality applies here)

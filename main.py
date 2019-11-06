@@ -14,7 +14,6 @@ try:
 	import knockadapt
 except ImportError:
 	# This is super hacky, will no longer be necessary after development ends
-	sys.stdout.write('Here1')
 	file_directory = os.path.dirname(os.path.abspath(__file__))
 	parent_directory = os.path.split(file_directory)[0]
 	knockoff_directory = parent_directory + '/knockadapt'
@@ -144,10 +143,10 @@ def main(args):
 		q = q, 
 		S_methods = S_methods,
 		feature_fns = {'LSM':calc_nongroup_LSM, 'group_LCD':group_lasso_LCD},
-						 #'group_LSM':group_lasso_LSM},
 		link_methods = link_methods,
 		S_kwargs = S_kwargs,
 		num_data_samples = num_datasets,
+		sample_kwargs = sample_kwargs
 	)
 
 	melted_results, oracle_results, S_matrixes = output
