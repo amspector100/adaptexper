@@ -211,7 +211,7 @@ def compare_methods(
                     S_kwargs = {'objective':'norm', 'norm_type':'fro'},
                     copies = 1,
                     seed = 110,
-                    reduction = 10,
+                    reduction = None,
                     time0 = None,
                     scache_only = False
                     ):
@@ -229,10 +229,12 @@ def compare_methods(
     if seed is not None:
         np.random.seed(seed)
 
-    # Get p, Q
+    # Get p, Q, reduction
     p = corr_matrix.shape[0]
-    if Q is not None:
+    if Q is None:
         Q = knockadapt.utilities.chol2inv(corr_matrix)
+    if reduction is None:
+        reduction = max(10, int(p/10))
 
     # Sample data for the first time, create links
     X, y, _, _, _ = knockadapt.graphs.sample_data(

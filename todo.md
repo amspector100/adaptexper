@@ -231,3 +231,4 @@ Small example of cluster use as well.
 
 # Notes
 1. Confirmed that the S matrix generated is truly independent of n
+2. At some point, change from ''reduction" to "number analyzed" so we dont compute like 100 groups for p = 1000
