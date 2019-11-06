@@ -126,7 +126,7 @@ def test_proposed_methods(n = 100,
             )
 
         for method_name in method_names:
-            sys.stdout.write(f'Beginning trial {j}, method {method_name}, time is {time.time() - time0}')
+            print(f'Beginning trial {j}, method {method_name}, time is {time.time() - time0}')
             knockoff_kwargs = knockoff_methods[method_name]
 
             # Calculate oracle powers
@@ -300,7 +300,7 @@ def compare_methods(
         cutoffs = all_cutoffs[link_method]
 
         # Progress report
-        sys.stdout.write(f'Generating/retreiving S matrices for {link_method} now, time is {time.time() - time0}')
+        print(f'Generating/retreiving S matrices for {link_method} now, time is {time.time() - time0}')
 
         # Add S matrixes
         for cutoff in cutoffs:
@@ -330,6 +330,7 @@ def compare_methods(
             S_matrixes[link_method][cutoff] = S_group
 
     if scache_only:
+        print('Terminating early because scache_only is true')
         return None
 
     # Construct oracle (curse of dimensionality applies here)
@@ -337,7 +338,7 @@ def compare_methods(
     columns = ['sample', 'cutoff', 'feature_fn', 'link_method', 'power', 'fdp']
     oracle_results = pd.DataFrame(columns = columns)
 
-    sys.stdout.write("Picking the best oracle!")
+    print("Picking the best oracle!")
     for j in range(num_data_samples):
 
         print(f'At data sample {j} for oracle, time is {time.time() - time0}')
@@ -389,13 +390,13 @@ def compare_methods(
     )['power'].mean()
     oracle_cutoffs = mean_powers.unstack().idxmax(1).unstack()
 
-    sys.stdout.write('Finished creating oracle: comparing methods now')
+    print('Finished creating oracle: comparing methods now')
 
     # Initialize output, begin loop
     output_df = pd.DataFrame(columns = OUTPUT_COLUMNS_V2)
     for j in range(num_data_samples):
 
-        sys.stdout.write(f'At data sample {j} for methods, time is {time.time() - time0}')
+        print(f'At data sample {j} for methods, time is {time.time() - time0}')
 
         # Create X and y
         X, y, beta2, Q2, corr_matrix2 = knockadapt.graphs.sample_data(
