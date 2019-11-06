@@ -1,4 +1,6 @@
 
+# Batch script
+run.sh
 
 # Don't save data
 data/*
