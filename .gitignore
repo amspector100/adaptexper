@@ -1,6 +1,7 @@
 
-# Batch script
+# Batch script for running and transferring
 run.sh
+transfer.sh
 
 # Don't save data
 data/*

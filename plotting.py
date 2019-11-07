@@ -82,6 +82,7 @@ def plot_n_curve(path):
 		q = thefile.read()
 	q = float(q)
 	results = pd.read_csv(csv_path)
+	n_vals = results['n'].unique()
 
 	# Figure out which column contains 'power'/'fdr' only:
 	# this is helpful to deal with some legacy graphs
@@ -91,43 +92,49 @@ def plot_n_curve(path):
 	else:
 		var_column = 'measurement'
 
-	# Plot power
+	# Plot power, empirical power, and FDR
 	warnings.filterwarnings("ignore")
-	power_path = path + '_power.SVG'
-	power_results = results.loc[results[var_column] == 'power']
-	power_results = power_results.rename(columns = {'value':'power'})
-	g2 = (
-		ggplot(power_results, aes(
-			x = 'n', y = 'power', color = 'split_type')
-		)
-		+ stat_summary(geom = 'line')
-		+ stat_summary(aes(shape = 'split_type'), geom = 'point', size = 2.5)
-		+ stat_summary(geom = "errorbar")#, fun_data = 'mean_cl_normal')
-		+ facet_grid('feature_fn~link_method')
-		+ labs(title = path)
-	)
-	g2.save(power_path)
+	print('Plotting FDRs, powers')
+	for meas_type in results[var_column].unique():
 
-	# Plot FDR
-	fdr_path = path + '_fdr.SVG'
-	fdr_results = results.loc[results[var_column] == 'fdr']
-	fdr_results = fdr_results.rename(columns = {'value':'fdr'})
-	print(fdr_results)
-	hline = geom_hline(
-		aes(yintercept = q), linetype="dashed", color = "red"
-	)
-	g2 = (
-		ggplot(fdr_results, aes(
-			x = 'n', y = 'fdr', color = 'split_type')
+		# Path and subset
+		new_path = path + '_' + meas_type + '.SVG'
+		subset = results.loc[results[var_column] == meas_type]
+		subset = subset.rename(columns = {'value':meas_type})
+
+		# Plot
+		g2 = (
+			ggplot(subset, aes(
+				x = 'n', y = meas_type, color = 'split_type')
+			)
+			+ stat_summary(geom = 'line')
+			+ stat_summary(aes(shape = 'split_type'), geom = 'point', size = 2.5)
+			+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_normal')
+			+ facet_grid('feature_fn~link_method')
+			+ labs(title = new_path)
+			+ scale_x_continuous(breaks = n_vals)
 		)
-		+ stat_summary(geom = 'line')
-		+ stat_summary(aes(shape = 'split_type'), geom = 'point', size = 2.5)
-		+ stat_summary(geom = "errorbar")#, fun_data = 'mean_cl_normal')
-		+ facet_grid('feature_fn~link_method')
-		+ hline
-		+ labs(title = path)
-	)
-	g2.save(fdr_path)
+		g2.save(new_path)
+
+	# Plot average group sizes and average cutoffs
+	print('Plotting groups, cutoffs')
+	for col in ['num_groups', 'cutoff']:
+
+		new_path = path + '_' + col + '.SVG'
+		g2 = (
+			ggplot(subset, aes(
+				x = 'n', y = col, color = 'split_type')
+			)
+			+ stat_summary(geom = 'line')
+			+ stat_summary(aes(shape = 'split_type'), geom = 'point', size = 2.5)
+			+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_normal')
+			+ facet_grid('feature_fn~link_method')
+			+ labs(title = new_path)
+			+ scale_x_continuous(breaks = n_vals)
+		)
+		g2.save(new_path)
+
+
 	warnings.simplefilter("always")
 
 

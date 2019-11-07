@@ -15,13 +15,6 @@ from multiprocessing import Pool
 from functools import partial 
 
 # Note full avg power is over all groupings
-OUTPUT_COLUMNS = [
-    'actual_power', 'actual_empirical_power', 'actual_fdr',
-    'nonsplit_power', 'nonsplit_empirical_power', 'nonsplit_fdr',
-    'oracle_power', 'oracle_empirical_power', 'oracle_fdr',
-    'full_avg_power'
-]
-
 FINAL_COLUMNS = ['link_method', 'feature_fn', 'sample', 'cutoff', 
                 'num_groups', 'variable', 'value', 'measurement',
                 'split_type']
@@ -204,7 +197,7 @@ def to_add_to_final_df(fdr,
     base_list = [link_method, feature_fn, sample, cutoff, num_groups]
     power_list = base_list + ['power', power, split_type + '_power', split_type]
     epower_list = base_list + [
-    'empirical_power', power, split_type + '_empirical_power', split_type
+    'empirical_power', epower, split_type + '_empirical_power', split_type
     ]
     fdr_list = base_list + ['fdr', fdr, split_type + '_fdr', split_type]
 
@@ -336,7 +329,6 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
 
             # Also, add the baseline to the output
             if link_cutoffs[0] != 0:
-                print('here')
                 raise ValueError(f'Expected cutoffs to start with 0, instead were {link_cutoffs}')
             baseline_cutoff = 0
             baseline_num_groups = np.unique(link_groups[baseline_cutoff]).shape[0]

@@ -1,4 +1,12 @@
 """ Old Oracle was too powerful """
+
+OUTPUT_COLUMNS = [
+    'actual_power', 'actual_empirical_power', 'actual_fdr',
+    'nonsplit_power', 'nonsplit_empirical_power', 'nonsplit_fdr',
+    'oracle_power', 'oracle_empirical_power', 'oracle_fdr',
+    'full_avg_power'
+]
+
 def test_proposed_methods(n = 100,
                           p = 50, 
                           q = 0.25, 
