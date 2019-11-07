@@ -92,13 +92,18 @@ def main(args):
 						help='Size of true coefficients relative to noise level (default: 10)',
 						default = 10)
 
+	parser.add_argument('--recompute', dest = 'recompute',
+					type=bool,
+					help='If true, recompute non S matrix related results (default: False)',
+					default = False)
+
 	parser.add_argument('--scache', dest = 'scache',
 					type=bool,
 					help='If true, only compute S matrices, do nothing else (default: False)',
 					default = False)
 
-
 	args = parser.parse_args()
+	sys.stdout.write(f'Parsed args are {args} \n')
 
 	# Retreive values
 	n = args.n
@@ -108,6 +113,7 @@ def main(args):
 	num_datasets = args.num_datasets
 	plot = args.plot
 	scache = args.scache
+	recompute = args.recompute
 
 	# Generate S methods
 	S_kwargs = {'objective':'norm', 
@@ -142,6 +148,7 @@ def main(args):
 	sample_string = ('_').join(sample_string)
 	all_fname += sample_string
 	all_fname_csv = all_fname + '.csv'
+	all_fname_oracle_csv = all_fname + '_oracle.csv'
 
 	# Reminders
 	all_name_q = all_fname + '_q.txt'
@@ -166,73 +173,86 @@ def main(args):
 	
 	# Initialize all result dataframe
 	all_results = pd.DataFrame()
+	all_oracle_results = pd.DataFrame()
 
 	# Loop through ns: no need to parallelize this yet
 	# since each n takes quite a while
 	for n in ns:
 
-		# Log that we've made it this far
-		sys.stdout.write(f'Running simulation for n = {n}')
-
-		# Run method comparison function - note the 
-		# S matrices should be cached 
-		link_methods = ['average']*max(1, len(S_methods))
-		output = experiments.compare_methods(
-			corr_matrix, 
-			beta, 
-			Q = Q, 
-			n = n,
-			q = q, 
-			S_methods = S_methods,
-			feature_fns = {'group_LCD':group_lasso_LCD},
-			link_methods = link_methods,
-			S_kwargs = S_kwargs,
-			num_data_samples = num_datasets,
-			sample_kwargs = sample_kwargs,
-			time0 = time0,
-			scache_only = scache
-		)
-		# Possibly exit if we only need to compute S matrices
-		if scache:
-			return None
-
-		melted_results, oracle_results, S_matrixes = output
-		id_vars = ['link_method', 'feature_fn', 'split_type', 'measurement']
-		
-		# Construct a (long) filename)
+		# Create filename, check that we haven't already done this computation
 		fname = f"figures/v2/seed{seed}_n{n}_p{p}_N{num_datasets}/"
 		if not os.path.exists(fname):
 			os.makedirs(fname)
 		fname += sample_string
-
-		# Save CSV
 		fname_csv = fname + '.csv'
-		melted_results.to_csv(fname_csv)
-		
-		# Plot and save
-		if plot:
+		fname_oracle_csv = fname + '_oracle.csv'
 
-			# Avoid messy plotnine dependency if not plotting
-			from plotting import plot_measurement_type
-			plot_measurement_type(melted_results, 
-									meas_type = 'power', 
-									fname = fname)
+		# Possibly use cached data
+		if not recompute and os.path.exists(fname_csv) and os.path.exists(fname_oracle_csv):
+			sys.stdout.write(f'Using cached data for n = {n}\n')
+			oracle_results = pd.read_csv(fname_oracle_csv, index_col = 0)
+			melted_results = pd.read_csv(fname_csv, index_col = 0)
 
-			plot_measurement_type(melted_results, 
-									meas_type = 'fdr',
-									yintercept = q,
-									fname = fname)     
+		# Else, it's time to compute!
+		else:
+			sys.stdout.write(f'Running simulation for n = {n}\n')
+
+			# Run method comparison function - note the 
+			# S matrices should be cached 
+			link_methods = ['average']*max(1, len(S_methods))
+			output = experiments.compare_methods(
+				corr_matrix, 
+				beta, 
+				Q = Q, 
+				n = n,
+				q = q, 
+				S_methods = S_methods,
+				feature_fns = {'group_LCD':group_lasso_LCD},
+				link_methods = link_methods,
+				S_kwargs = S_kwargs,
+				num_data_samples = num_datasets,
+				sample_kwargs = sample_kwargs,
+				time0 = time0,
+				scache_only = scache
+			)
+			# Possibly exit if we only need to compute S matrices
+			if scache:
+				return None
+
+			# Unpack and cache
+			melted_results, oracle_results, _ = output
+			melted_results.to_csv(fname_csv)
+			oracle_results.to_csv(fname_oracle_csv)
+			
+			# Possibly plot, usually not though - delete this later
+			if plot:
+
+				# Avoid messy plotnine dependency if not plotting
+				from plotting import plot_measurement_type
+				plot_measurement_type(melted_results, 
+										meas_type = 'power', 
+										fname = fname)
+
+				plot_measurement_type(melted_results, 
+										meas_type = 'fdr',
+										yintercept = q,
+										fname = fname)     
 
 		# Aggregate with all other data
 		melted_results['n'] = n
+		oracle_results['n'] = n
 		all_results = pd.concat(
 			[all_results, melted_results], axis = 'index'
 		)
+		all_oracle_results = pd.concat(
+			[all_oracle_results, oracle_results], axis = 'index'
+		)
 
-		# Cache just in case
+		# Save
 		all_results.to_csv(all_fname_csv)
+		all_oracle_results.to_csv(all_fname_oracle_csv)
 
-	return all_results 
+	return all_results, all_oracle_results
 
 if __name__ == '__main__':
 	sys.exit(main(sys.argv))
