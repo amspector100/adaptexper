@@ -83,17 +83,26 @@ def plot_n_curve(path):
 	q = float(q)
 	results = pd.read_csv(csv_path)
 
+	# Figure out which column contains 'power'/'fdr' only:
+	# this is helpful to deal with some legacy graphs
+	# (in the newer version, it should be variable)
+	if 'power' in results['variable'].unique():
+		var_column = 'variable'
+	else:
+		var_column = 'measurement'
+
 	# Plot power
+	warnings.filterwarnings("ignore")
 	power_path = path + '_power.SVG'
-	power_results = results.loc[results['measurement'] == 'power']
+	power_results = results.loc[results[var_column] == 'power']
 	power_results = power_results.rename(columns = {'value':'power'})
 	g2 = (
 		ggplot(power_results, aes(
 			x = 'n', y = 'power', color = 'split_type')
 		)
 		+ stat_summary(geom = 'line')
-		+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_boot')
 		+ stat_summary(aes(shape = 'split_type'), geom = 'point', size = 2.5)
+		+ stat_summary(geom = "errorbar")#, fun_data = 'mean_cl_normal')
 		+ facet_grid('feature_fn~link_method')
 		+ labs(title = path)
 	)
@@ -101,8 +110,9 @@ def plot_n_curve(path):
 
 	# Plot FDR
 	fdr_path = path + '_fdr.SVG'
-	fdr_results = results.loc[results['measurement'] == 'fdr']
+	fdr_results = results.loc[results[var_column] == 'fdr']
 	fdr_results = fdr_results.rename(columns = {'value':'fdr'})
+	print(fdr_results)
 	hline = geom_hline(
 		aes(yintercept = q), linetype="dashed", color = "red"
 	)
@@ -111,13 +121,15 @@ def plot_n_curve(path):
 			x = 'n', y = 'fdr', color = 'split_type')
 		)
 		+ stat_summary(geom = 'line')
-		+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_boot')
 		+ stat_summary(aes(shape = 'split_type'), geom = 'point', size = 2.5)
+		+ stat_summary(geom = "errorbar")#, fun_data = 'mean_cl_normal')
 		+ facet_grid('feature_fn~link_method')
 		+ hline
 		+ labs(title = path)
 	)
 	g2.save(fdr_path)
+	warnings.simplefilter("always")
+
 
 
 if __name__ == '__main__':

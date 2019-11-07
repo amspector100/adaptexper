@@ -83,13 +83,14 @@ def plot_powers(x, hat_powers, fdps, powers, Ms,
 
 def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                  link_methods, feature_fns, all_cutoffs, all_groups,
-                 S_matrixes, time0, copies):
+                 S_matrixes, time0, copies, compute_split_oracles = True):
     """ Helper function for multiprocessing: evaluates the oracles, returns
     a list of rows to add to the oracle results dataframe.
     Sorry for all the arguments, it's unavoidable with the multiprocessing package
     (This has to be globally defined or it's not pickleable)
 
-    Note: j is the sample number """
+    Note: j is the sample number 
+    If compute_split_oracles is False, will only do one oracle"""
 
     sys.stdout.write(f'At data sample {j} for oracle, time is {time.time() - time0}\n')
 
@@ -129,22 +130,6 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                     feature_stat_fn = feature_stat_fn
                 )
 
-                # Oracle for half data - does NOT use sample recycling
-                half_fdps, half_powers, half_hat_powers = knockadapt.adaptive.evaluate_grouping(
-                    X = X[0:int(n/2)], y = y[0:int(n/2)], 
-                    corr_matrix = corr_matrix, groups = groups, q = q,
-                    non_nulls = beta, S = S, copies = copies, verbose = False,
-                    feature_stat_fn = feature_stat_fn
-                )
-
-                # Oracle for half data which DOES use sample recycling
-                rec_fdps, rec_powers, rec_hat_powers = knockadapt.adaptive.evaluate_grouping(
-                    X = X[0:int(n/2)], y = y[0:int(n/2)], 
-                    corr_matrix = corr_matrix, groups = groups, q = q,
-                    non_nulls = beta, S = S, copies = copies, verbose = False,
-                    feature_stat_fn = feature_stat_fn
-                )
-
                 # Add power to regular oracle
                 to_add = pd.DataFrame(
                     columns = ORACLE_COLUMNS,
@@ -153,21 +138,45 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 )
                 outputs_to_add.append(to_add)
 
-                # Add power to non-recycling split oracle
-                half_to_add = pd.DataFrame(
-                    columns = ORACLE_COLUMNS,
-                    data = [[j, cutoff, feature_method, link_method, 
-                             half_powers.mean(), half_fdps.mean(), 'split_oracle']]
-                )
-                outputs_to_add.append(half_to_add)
+                if compute_split_oracles:
 
-                # Add power to recycling split oracle
-                rec_to_add = pd.DataFrame(
-                    columns = ORACLE_COLUMNS,
-                    data = [[j, cutoff, feature_method, link_method, 
-                            rec_powers.mean(), rec_fdps.mean(), 'rec_oracle']]
-                )
-                outputs_to_add.append(rec_to_add)
+                    # Add power to non-recycling split oracle
+
+                    # Oracle for half data - does NOT use sample recycling
+                    half_fdps, half_powers, half_hat_powers = knockadapt.adaptive.evaluate_grouping(
+                        X = X[0:int(n/2)], y = y[0:int(n/2)], 
+                        corr_matrix = corr_matrix, groups = groups, q = q,
+                        non_nulls = beta, S = S, copies = copies, verbose = False,
+                        feature_stat_fn = feature_stat_fn
+                    )
+
+                    # Add to outputs
+                    half_to_add = pd.DataFrame(
+                        columns = ORACLE_COLUMNS,
+                        data = [[j, cutoff, feature_method, link_method, 
+                                 half_powers.mean(), half_fdps.mean(), 'split_oracle']]
+                    )
+
+                    outputs_to_add.append(half_to_add)
+
+
+                    # Oracle for half data which DOES use sample recycling
+                    rec_fdps, rec_powers, rec_hat_powers = knockadapt.adaptive.evaluate_grouping(
+                        X = X[0:int(n/2)], y = y[0:int(n/2)], 
+                        corr_matrix = corr_matrix, groups = groups, q = q,
+                        non_nulls = beta, S = S, copies = copies, verbose = False,
+                        feature_stat_fn = feature_stat_fn
+                    )
+
+                    # Add power to recycling split oracle
+                    rec_to_add = pd.DataFrame(
+                        columns = ORACLE_COLUMNS,
+                        data = [[j, cutoff, feature_method, link_method, 
+                                rec_powers.mean(), rec_fdps.mean(), 'rec_oracle']]
+                    )
+
+
+                    outputs_to_add.append(rec_to_add)
 
     return outputs_to_add
 
@@ -314,6 +323,28 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
             )
             final_output.append(to_add)
 
+            # Also, add the baseline to the output
+            if link_cutoffs[0] != 0:
+                print('here')
+                raise ValueError(f'Expected cutoffs to start with 0, instead were {link_cutoffs}')
+            baseline_cutoff = 0
+            baseline_num_groups = np.unique(link_groups[baseline_cutoff]).shape[0]
+            baseline_power = ns_powers[0]
+            baseline_empirical_power = ns_powers[0]
+            baseline_fdr = ns_fdps[0]
+
+            # Add baseline to output
+            to_add = to_add_to_final_df(
+                fdr = baseline_fdr, power = baseline_power,
+                epower = baseline_empirical_power,
+                cutoff = baseline_cutoff,
+                num_groups = baseline_num_groups, 
+                link_method = link_method,
+                feature_fn = feature_method,
+                sample = j, split_type = 'baseline'
+            )
+            final_output.append(to_add)
+            
             # Repeat but for sample-splitting method ----------
 
             # Split in half and "train"
@@ -377,7 +408,8 @@ def compare_methods(
                     reduction = None,
                     time0 = None,
                     scache_only = False,
-                    num_processes = 8
+                    num_processes = 8,
+                    compute_split_oracles = True,
                     ):
     """ 
     S_methods arg optionally allows you to add extra kwargs (e.g. ASDP instead of SDP)
@@ -398,7 +430,7 @@ def compare_methods(
     if Q is None:
         Q = knockadapt.utilities.chol2inv(corr_matrix)
     if reduction is None:
-        reduction = max(10, int(p/10))
+        reduction = 10
 
     # Sample data for the first time, create links
     X, y, _, _, _ = knockadapt.graphs.sample_data(
@@ -424,10 +456,15 @@ def compare_methods(
         ) for link_method in link_methods
     }
 
-    # List of list storing cutoffs
-    all_cutoffs = {
-        link_method:links[link_method][:, 2][::reduction] for link_method in link_methods
-    }
+    # Dictionary storing cutoff lists for each link method
+    all_cutoffs = {}
+    for link_method in link_methods:
+        link = links[link_method]
+        # Max size refers to maximum group size
+        cutoffs = knockadapt.adaptive.create_cutoffs(
+            link = link, reduction = reduction, max_size = 100
+        )
+        all_cutoffs[link_method] = cutoffs
 
     # Dictionary of dictionaries (link by cutoff) which stores group sizes
     all_Ms = {}
@@ -507,14 +544,23 @@ def compare_methods(
         Q = Q, beta = beta, sample_kwargs = sample_kwargs,
         link_methods = link_methods, feature_fns = feature_fns, 
         all_cutoffs = all_cutoffs, all_groups = all_groups, 
-        S_matrixes = S_matrixes, time0 = time0, copies = copies)
+        S_matrixes = S_matrixes, time0 = time0, copies = copies,
+        compute_split_oracles = compute_split_oracles
+    )
 
     # End helper function ---------------------------
     sys.stdout.write("Picking the best oracles!\n")
-    with Pool(num_processes) as thepool:
-        all_outputs_to_add = thepool.map(
-            partial_eval_oracles, list(range(num_data_samples))
-        )
+
+    # Don't use the pool object if n-processes is 1
+    if num_processes == 1:
+        all_outputs_to_add = []
+        for j in range(num_data_samples):
+            all_outputs_to_add.append(partial_eval_oracles(j))
+    else:
+        with Pool(num_processes) as thepool:
+            all_outputs_to_add = thepool.map(
+                partial_eval_oracles, list(range(num_data_samples))
+            )
 
     # Put it all together
     for process_output in all_outputs_to_add:
@@ -550,10 +596,17 @@ def compare_methods(
         S_matrixes = S_matrixes, time0 = time0, copies = copies,
         reduction = reduction
     )
-    with Pool(num_processes) as thepool:
-        comparisons_to_add = thepool.map(
-            partial_one_sample_comparison, list(range(num_data_samples))
-        )
+
+    # Don't use pool object if num_processes == 1
+    if num_processes == 1:
+        comparisons_to_add = []
+        for j in range(num_processes):
+            comparisons_to_add.append(partial_one_sample_comparison(j))
+    else:
+        with Pool(num_processes) as thepool:
+            comparisons_to_add = thepool.map(
+                partial_one_sample_comparison, list(range(num_data_samples))
+            )
 
     sys.stdout.write(f'Finished: now just combining outputs, time is {time.time() - time0}\n')
 

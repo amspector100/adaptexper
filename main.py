@@ -18,7 +18,7 @@ except ImportError:
 	file_directory = os.path.dirname(os.path.abspath(__file__))
 	parent_directory = os.path.split(file_directory)[0]
 	knockoff_directory = parent_directory + '/knockadapt'
-	sys.stdout.write(f'Knockoff dir is {knockoff_directory}')
+	sys.stdout.write(f'Knockoff dir is {knockoff_directory}\n')
 	sys.path.insert(0, os.path.abspath(knockoff_directory))
 	import knockadapt
 	from knockadapt.knockoff_stats import group_lasso_LCD
@@ -62,10 +62,10 @@ def main(args):
 						help='If true, plot results via plotnine (default: False)',
 						default = False)
 
-	parser.add_argument('--sdp', dest = 'sdp',
+	parser.add_argument('--nosdp', dest = 'nosdp',
 						type=str, 
-						help='If true, use full semidefinite programming (default: True)',
-						default = True)
+						help='If true, do NOT use full semidefinite programming (default: False)',
+						default = False)
 
 	parser.add_argument('--asdp', dest = 'asdp',
 						type=str, 
@@ -107,6 +107,11 @@ def main(args):
 					help='How many processes to use in multiprocessing package (default: 8)',
 					default = 8)
 
+	parser.add_argument('--splitoracles', dest = 'splitoracles',
+					type=bool,
+					help='To test the split oracles (default: False)',
+					default = False)
+
 	args = parser.parse_args()
 	sys.stdout.write(f'Parsed args are {args} \n')
 
@@ -120,6 +125,7 @@ def main(args):
 	scache = args.scache
 	recompute = args.recompute
 	num_processes = args.numprocesses
+	splitoracles = args.splitoracles
 
 	# Generate S methods
 	S_kwargs = {'objective':'norm', 
@@ -127,7 +133,7 @@ def main(args):
 				'verbose':True, 
 				'sdp_verbose':False}
 
-	if args.sdp:
+	if not args.nosdp:
 		S_methods = [('SDP', {'method':'SDP'})]
 	else:
 		S_methods = []
@@ -165,7 +171,7 @@ def main(args):
 	if n != 0:
 		ns = [n]
 	else:
-		ns = np.linspace(p/5, 5*p, 7)
+		ns = [p/4, p/2, p, 2*p, 4*p]
 		ns = [int(n) for n in ns]
 
 	# Timing
@@ -220,7 +226,8 @@ def main(args):
 				sample_kwargs = sample_kwargs,
 				time0 = time0,
 				scache_only = scache,
-				num_processes = num_processes
+				num_processes = num_processes,
+				compute_split_oracles = splitoracles,
 			)
 			# Possibly exit if we only need to compute S matrices
 			if scache:
@@ -262,4 +269,19 @@ def main(args):
 	return all_results, all_oracle_results
 
 if __name__ == '__main__':
+	if '--profile' in sys.argv:
+		sys.argv.remove('--profile')
+
+		# Profile
+		import cProfile
+		cProfile.run('main(sys.argv)', 'profile')
+
+		# Analyze
+		import pstats
+		p = pstats.Stats('profile')
+		p.strip_dirs().sort_stats('cumulative').print_stats(50)
+
+
+
+
 	sys.exit(main(sys.argv))
