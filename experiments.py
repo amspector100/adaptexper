@@ -94,11 +94,17 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
 
     sys.stdout.write(f'At data sample {j} for oracle, time is {time.time() - time0}\n')
 
-    # Create X and y
+    # Create X and y - make this random so different
+    # processes really have different values. But save random state
+    # and restore it for later
+    st0 = np.random.get_state()
+    np.random.seed()
     X, y, beta2, Q2, corr_matrix2 = knockadapt.graphs.sample_data(
        n = n, p = p, corr_matrix = corr_matrix, Q = Q, beta = beta,
        **sample_kwargs
     )
+    # Restore random state
+    np.random.set_state(st0)
 
     # Sanity check
     if np.abs(beta2 - beta).sum() != 0:
@@ -221,11 +227,16 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
 
     sys.stdout.write(f'At sample labeled {j} for methods, time is {time.time() - time0}\n')
 
-    # Create X and y
+    # Create X and y - try to really randomize this so it's
+    # different between different processes.
+    st0 = np.random.get_state()
+    np.random.seed()
     X, y, _, _, _ = knockadapt.graphs.sample_data(
        n = n, p = p, corr_matrix = corr_matrix, Q = Q, beta = beta,
        **sample_kwargs
     )
+    # Restore random state
+    np.random.set_state(st0)
 
     # Initialize final output
     final_output = []
