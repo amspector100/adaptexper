@@ -329,7 +329,7 @@ def compare_methods(
         cutoffs = all_cutoffs[link_method]
 
         # Progress report
-        sys.stdout.write(f'Generating/retreiving S matrices for {link_method} now, time is {time.time() - time0}')
+        sys.stdout.write(f'Generating/retreiving S matrices for {link_method} now, time is {time.time() - time0}\n')
 
         # Add S matrixes
         for cutoff in cutoffs:
@@ -367,10 +367,10 @@ def compare_methods(
     columns = ['sample', 'cutoff', 'feature_fn', 'link_method', 'power', 'fdp', 'oracle_type']
     oracle_results = pd.DataFrame(columns = columns)
 
-    sys.stdout.write("Picking the best oracles!")
+    sys.stdout.write("Picking the best oracles!\n")
     for j in range(num_data_samples):
 
-        sys.stdout.write(f'At data sample {j} for oracle, time is {time.time() - time0}')
+        sys.stdout.write(f'At data sample {j} for oracle, time is {time.time() - time0}\n')
 
         # Create X and y
         X, y, beta2, Q2, corr_matrix2 = knockadapt.graphs.sample_data(
@@ -462,13 +462,13 @@ def compare_methods(
         oracle_cutoffs = mean_powers.unstack().idxmax(1).unstack()
         all_oracle_cutoffs[oracle_type] = oracle_cutoffs
 
-    sys.stdout.write(f'Finished creating oracles: comparing methods, time is {time.time() - time0}')
+    sys.stdout.write(f'Finished creating oracles: comparing methods, time is {time.time() - time0}\n')
 
     # Initialize output, begin loop
     output_df = pd.DataFrame(columns = FINAL_COLUMNS)
     for j in range(num_data_samples):
 
-        sys.stdout.write(f'At data sample {j} for methods, time is {time.time() - time0}')
+        sys.stdout.write(f'At data sample {j} for methods, time is {time.time() - time0}\n')
 
         # Create X and y
         X, y, beta2, Q2, corr_matrix2 = knockadapt.graphs.sample_data(
