@@ -233,5 +233,6 @@ Small example of cluster use as well.
 1. Confirmed that the S matrix generated is truly independent of n
 
 # Tonight
-1. Second oracle
-2. Save cutoffs, cutoff distributions
+1. Caching of previous runs
+2. Master plotting function
+3. Pull stuff onto local computer

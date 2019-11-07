@@ -11,6 +11,8 @@ import matplotlib.pyplot as plt
 
 from smatrices import cache_S_matrix, load_S_matrix
 
+from multiprocessing import Pool
+from functools import partial 
 
 # Note full avg power is over all groupings
 OUTPUT_COLUMNS = [
@@ -23,6 +25,10 @@ OUTPUT_COLUMNS = [
 FINAL_COLUMNS = ['link_method', 'feature_fn', 'sample', 'cutoff', 
                 'num_groups', 'variable', 'value', 'measurement',
                 'split_type']
+
+ORACLE_COLUMNS = ['sample', 'cutoff', 'feature_fn', 'link_method',
+                  'power', 'fdp', 'oracle_type']
+
 
 # Plotting functions ------------------------------------------
 def add_extra_x_axis(ax, cutoffs, Ms): 
@@ -75,137 +81,108 @@ def plot_powers(x, hat_powers, fdps, powers, Ms,
     fig.suptitle(f'Group adaptive knockoffs for n = {n}, p = {p}, coefficient mag = {coeff_size}')
     plt.show()
 
+def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
+                 link_methods, feature_fns, all_cutoffs, all_groups,
+                 S_matrixes, time0, copies):
+    """ Helper function for multiprocessing: evaluates the oracles, returns
+    a list of rows to add to the oracle results dataframe.
+    Sorry for all the arguments, it's unavoidable with the multiprocessing package
+    (This has to be globally defined or it's not pickleable)
 
-def test_proposed_methods(n = 100,
-                          p = 50, 
-                          q = 0.25, 
-                          num_graphs = 20,
-                          link_method = 'complete',
-                          split = True,
-                          sample_kwargs = {'coeff_size':10,},
-                          knockoff_methods = {'default':{}},
-                          seed = 110,
-                          plot = False,
-                          ):
-    """ Find expected power of a proposed method with a specific
-    method of data sampling / graph generation 
+    Note: j is the sample number """
 
-    :param knockoff_methods: A dictionary of method names
-    which map to kwargs to pass to the knockoff constructor."""
+    sys.stdout.write(f'At data sample {j} for oracle, time is {time.time() - time0}\n')
 
+    # Create X and y
+    X, y, beta2, Q2, corr_matrix2 = knockadapt.graphs.sample_data(
+       n = n, p = p, corr_matrix = corr_matrix, Q = Q, beta = beta,
+       **sample_kwargs
+    )
 
-    # Possibly make reproducible
-    if seed is not None:
-        np.random.seed(seed)
+    # Sanity check
+    if np.abs(beta2 - beta).sum() != 0:
+        raise ValueError('Uh oh, DGP is being changed! (beta)')
+    if np.abs(corr_matrix2 - corr_matrix).sum() != 0:
+        raise ValueError('Uh oh, DGP is being changed! (corr_matrix)')
+    if np.abs(Q2 - Q).sum() != 0:
+        raise ValueError('Uh oh, DGP is being changed! (Q)')
 
-    # Initialize data structure to hold outputs
-    method_names = list(knockoff_methods.keys())
-    indexes = np.arange(0, num_graphs, 1)
-    data = {
-        method:pd.DataFrame(columns = OUTPUT_COLUMNS) for method in method_names
-    }
+    # Iterate through link methods and feature methods
+    outputs_to_add = []
+    for link_method in link_methods:
+        for feature_method in feature_fns:
 
-    # Timing
-    time0 = time.time()
+            # Right feature statistic generator
+            feature_stat_fn = feature_fns[feature_method]
 
-    for j in range(num_graphs):
+            # Run knockoffs for each cutoff
+            for cutoff in all_cutoffs[link_method]:
 
-        # Sample data, create correlation tree, possibly plot
-        X, y, beta, Q, corr_matrix = knockadapt.graphs.sample_data(
-           n = n, p = p, **sample_kwargs
-        )
-        link = knockadapt.graphs.create_correlation_tree(
-            corr_matrix, method = link_method
-        )
-        if plot:
-            knockadapt.graphs.plot_dendrogram(
-                link, title = link_method + ' Hierarchical Clustering'
-            )
+                # Get the group and S matrix
+                groups = all_groups[link_method][cutoff]
+                S = S_matrixes[link_method][cutoff]
 
-        for method_name in method_names:
-            sys.stdout.write(f'Beginning trial {j}, method {method_name}, time is {time.time() - time0}')
-            knockoff_kwargs = knockoff_methods[method_name]
-
-            # Calculate oracle powers
-            reduction = int(np.floor(p/5))
-            cutoffs, hat_powers, fdps, powers, Ms = knockadapt.adaptive.select_highest_power(
-                X, y, corr_matrix, link, non_nulls = beta, q = q, reduction = reduction,
-                **knockoff_kwargs, 
-            )
-
-            # Find oracle power, empirical power, fdr
-            full_avg_power = np.mean(np.array(powers))
-            selection = np.argmax(np.array(powers))
-            oracle_power = powers[selection]
-            oracle_empirical_power = hat_powers[selection]
-            oracle_fdr = fdps[selection]
-
-            # Find non-sample-split powers
-            selection = np.argmax(np.array(hat_powers))
-            nonsplit_power = powers[selection]
-            nonsplit_empirical_power = hat_powers[selection]
-            nonsplit_fdr = fdps[selection]
-
-            # Calculate what we'd actually see with actual powers
-            if split:
-
-                # Split in half and "train"
-                trainX = X[0:int(n/2)]
-                trainy = y[0:int(n/2)]
-                cutoffs, hat_powers, fdps, powers, Ms = knockadapt.adaptive.select_highest_power(
-                    trainX, trainy, corr_matrix, link, non_nulls = beta, q = q, reduction = reduction,
-                    **knockoff_kwargs, 
-                )
-
-                # Pick our best grouping/expected power
-                actual_empirical_power = max(hat_powers)
-                selected_cutoff = cutoffs[np.argmax(np.array(hat_powers))]
-                selected_grouping = hierarchy.fcluster(
-                    link, selected_cutoff, criterion = "distance"
-                )
-
-                # Now test to see what discoveries we find
-                testX = X[int(n/2):]
-                testy = y[int(n/2):]
+                # Oracle for full data
                 fdps, powers, hat_powers = knockadapt.adaptive.evaluate_grouping(
-                    testX, testy, corr_matrix, selected_grouping, non_nulls = beta, q =q,
-                    **knockoff_kwargs,
+                    X = X, y = y, corr_matrix = corr_matrix, groups = groups, q = q,
+                    non_nulls = beta, S = S, copies = copies, verbose = False,
+                    feature_stat_fn = feature_stat_fn
                 )
-                actual_fdr = np.array(fdps).mean()
-                actual_power = np.array(powers).mean()
 
-            # Add to dataframe
-            method_results = [
-                actual_power, actual_empirical_power, actual_fdr,
-                nonsplit_power, nonsplit_empirical_power, nonsplit_fdr,
-                oracle_power, oracle_empirical_power, oracle_fdr,
-                full_avg_power
-            ]
-            data[method_name].loc[j] = pd.Series(method_results, index = OUTPUT_COLUMNS)
+                # Oracle for half data - does NOT use sample recycling
+                half_fdps, half_powers, half_hat_powers = knockadapt.adaptive.evaluate_grouping(
+                    X = X[0:int(n/2)], y = y[0:int(n/2)], 
+                    corr_matrix = corr_matrix, groups = groups, q = q,
+                    non_nulls = beta, S = S, copies = copies, verbose = False,
+                    feature_stat_fn = feature_stat_fn
+                )
 
-    # Coerce data into proper format
-    all_data = pd.DataFrame(columns = OUTPUT_COLUMNS + ['methodname'])
-    for methodname in data:
-        data[methodname]['methodname'] = methodname
-        all_data = pd.concat([all_data, data[methodname]])
-    all_data['trial'] = all_data.index
-    all_data.reset_index(inplace = True)
+                # Oracle for half data which DOES use sample recycling
+                rec_fdps, rec_powers, rec_hat_powers = knockadapt.adaptive.evaluate_grouping(
+                    X = X[0:int(n/2)], y = y[0:int(n/2)], 
+                    corr_matrix = corr_matrix, groups = groups, q = q,
+                    non_nulls = beta, S = S, copies = copies, verbose = False,
+                    feature_stat_fn = feature_stat_fn
+                )
 
-    return all_data
+                # Add power to regular oracle
+                to_add = pd.DataFrame(
+                    columns = ORACLE_COLUMNS,
+                    data = [[j, cutoff, feature_method, link_method, 
+                            powers.mean(), fdps.mean(), 'oracle']]
+                )
+                outputs_to_add.append(to_add)
 
-def add_to_final_df(df, 
-                    fdr,
-                    power,
-                    epower,
-                    cutoff,
-                    num_groups,
-                    link_method,
-                    feature_fn,
-                    sample,
-                    split_type,
-                    ):
-    """ Helper function for compare_methods, adds fdr/power calcs 
-    of a method to the final output. Epower stands for empirical power"""
+                # Add power to non-recycling split oracle
+                half_to_add = pd.DataFrame(
+                    columns = ORACLE_COLUMNS,
+                    data = [[j, cutoff, feature_method, link_method, 
+                             half_powers.mean(), half_fdps.mean(), 'split_oracle']]
+                )
+                outputs_to_add.append(half_to_add)
+
+                # Add power to recycling split oracle
+                rec_to_add = pd.DataFrame(
+                    columns = ORACLE_COLUMNS,
+                    data = [[j, cutoff, feature_method, link_method, 
+                            rec_powers.mean(), rec_fdps.mean(), 'rec_oracle']]
+                )
+                outputs_to_add.append(rec_to_add)
+
+    return outputs_to_add
+
+def to_add_to_final_df(fdr,
+                       power,
+                       epower,
+                       cutoff,
+                       num_groups,
+                       link_method,
+                       feature_fn,
+                       sample,
+                       split_type,
+                       ):
+    """ Helper function for compare_methods, constructs DFs 
+    to add to the final output. Epower stands for empirical power"""
 
     # Create melted lists of the form:
     # link_method, feature_fn, sample, cutoff, num_groups variable, value, measurement, split_type
@@ -217,13 +194,170 @@ def add_to_final_df(df,
     fdr_list = base_list + ['fdr', fdr, split_type + '_fdr', split_type]
 
     # Add to dataframe
+    output_list = []
     for list_to_add in [power_list, fdr_list, epower_list]:
         to_add = pd.DataFrame(
             columns = FINAL_COLUMNS,
             data = [list_to_add]
         )
-        df = df.append(to_add, ignore_index = True)
-    return df
+        output_list.append(to_add)
+    return output_list
+
+def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
+                          reduction, links, link_methods, feature_fns, 
+                          all_cutoffs, all_groups, S_matrixes, time0,
+                          copies, all_oracle_cutoffs):
+    """ Compares methods with one sample - this is a helper function
+    to pass to the multiprocessing package later. As before, j is sample number."""
+
+    sys.stdout.write(f'At sample labeled {j} for methods, time is {time.time() - time0}\n')
+
+    # Create X and y
+    X, y, _, _, _ = knockadapt.graphs.sample_data(
+       n = n, p = p, corr_matrix = corr_matrix, Q = Q, beta = beta,
+       **sample_kwargs
+    )
+
+    # Initialize final output
+    final_output = []
+
+    # Iterate through link methods and feature methods
+    for link_method in link_methods:
+        for feature_method in feature_fns:
+
+            # Right feature statistic generator
+            feature_stat_fn = feature_fns[feature_method]
+            link = links[link_method]
+
+            # Calcualte oracle powers, fdrs, etc ---------------
+            trainX = X[0:int(n/2)]
+            trainy = y[0:int(n/2)]
+            for oracle_type in all_oracle_cutoffs:
+
+                # Cutoff, links, groups
+                oracle_cutoffs = all_oracle_cutoffs[oracle_type]
+                oracle_cutoff = oracle_cutoffs.loc[feature_method, link_method]
+                groups = all_groups[link_method][oracle_cutoff]
+                num_groups = np.unique(groups).shape[0]
+                S = S_matrixes[link_method][oracle_cutoff]
+
+                # One of the oracles uses split data
+                if oracle_type == 'split_oracle':
+                    X_to_use = trainX
+                    y_to_use = trainy
+                else:
+                    X_to_use = X
+                    y_to_use = y
+                
+                # One of the oracles recycles
+                if oracle_type == 'rec_oracle':
+                    recycle_up_to = int(n/2)
+                else:
+                    recycle_up_to = None
+
+                # Calculate oracle power --------
+                o_fdps, o_powers, o_hat_powers = knockadapt.adaptive.evaluate_grouping(
+                    X = X_to_use, y = y_to_use, corr_matrix = corr_matrix, 
+                    groups = groups, q = q, non_nulls = beta,
+                     S = S, copies = copies, verbose = False,
+                    feature_stat_fn = feature_stat_fn,
+                    recycle_up_to = recycle_up_to
+                )
+                oracle_fdr = o_fdps.mean()
+                oracle_power = o_powers.mean()
+                oracle_empirical_power = o_hat_powers.mean()
+
+                # Add to output
+                to_add = to_add_to_final_df(
+                    fdr = oracle_fdr, power = oracle_power,
+                    epower = oracle_empirical_power,
+                    cutoff = oracle_cutoff, num_groups = num_groups,
+                    link_method = link_method, 
+                    feature_fn = feature_method, 
+                    sample = j, split_type = oracle_type
+                )
+                final_output.extend(to_add)
+
+
+            # Find cutoffs, list of groups for other methods -----
+            link_cutoffs = all_cutoffs[link_method]
+            link_groups = all_groups[link_method]
+            link_S_matrices = S_matrixes[link_method]
+
+            # Calculate adaptive power for nonsplit method -----
+            _, ns_hat_powers, ns_fdps, ns_powers, _ = knockadapt.adaptive.select_highest_power(
+                X = X, y = y, corr_matrix = corr_matrix, link = link,
+                q = q, cutoffs = link_cutoffs, non_nulls = beta, 
+                reduction = reduction,
+                S_matrices = link_S_matrices,
+                copies = copies, verbose = False, 
+                feature_stat_fn = feature_stat_fn,
+            )
+
+            # Find non-sample-split powers
+            nonsplit_selection = np.argmax(np.array(ns_hat_powers))
+            nonsplit_cutoff = link_cutoffs[nonsplit_selection]
+            nonsplit_num_groups = np.unique(link_groups[nonsplit_cutoff]).shape[0]
+            nonsplit_power = ns_powers[nonsplit_selection]
+            nonsplit_empirical_power = ns_hat_powers[nonsplit_selection]
+            nonsplit_fdr = ns_fdps[nonsplit_selection]
+
+            # Add to output
+            to_add = to_add_to_final_df(
+                fdr = nonsplit_fdr, power = nonsplit_power,
+                epower = nonsplit_empirical_power,
+                cutoff = nonsplit_cutoff,
+                num_groups = nonsplit_num_groups, 
+                link_method = link_method,
+                feature_fn = feature_method,
+                sample = j, split_type = 'nonsplit'
+            )
+            final_output.append(to_add)
+
+            # Repeat but for sample-splitting method ----------
+
+            # Split in half and "train"
+            _, spl_hat_powers, spl_fdps, spl_powers, _ = knockadapt.adaptive.select_highest_power(
+                X = trainX, y = trainy, corr_matrix = corr_matrix, link = link,
+                q = q, cutoffs = link_cutoffs, non_nulls = beta, 
+                reduction = reduction,
+                S_matrices = link_S_matrices,
+                copies = copies, verbose = False, 
+                feature_stat_fn = feature_stat_fn,
+            )
+
+            # Pick our best grouping/expected power
+            expected_empirical_power = max(spl_hat_powers)
+            selected_cutoff = link_cutoffs[np.argmax(np.array(spl_hat_powers))]
+            selected_grouping = link_groups[selected_cutoff]
+            spl_num_groups = np.unique(selected_grouping).shape[0]
+
+            # Now test to see what discoveries we find
+            # This involves knockoff recycling 
+            spl_fdps, spl_powers, spl_hat_powers = knockadapt.adaptive.evaluate_grouping(
+                X = X, y = y, corr_matrix = corr_matrix, groups = groups, q = q, 
+                non_nulls = beta, S = S, copies = copies, verbose = False,
+                recycle_up_to = int(n/2),
+                feature_stat_fn = feature_stat_fn
+            )
+            actual_fdr = spl_fdps.mean()
+            actual_power = spl_powers.mean()
+            actual_empirical_power = spl_hat_powers.mean()
+
+            # Add to dataframe
+            to_add = to_add_to_final_df(
+                fdr = actual_fdr, power = actual_power,
+                epower = actual_empirical_power,
+                cutoff = selected_cutoff, 
+                num_groups = spl_num_groups,
+                link_method = link_method,
+                feature_fn = feature_method,
+                sample = j, split_type = 'actual'
+            )
+            final_output.append(to_add)
+
+    return final_output
+
 
 def compare_methods(
                     corr_matrix,
@@ -242,7 +376,8 @@ def compare_methods(
                     seed = 110,
                     reduction = None,
                     time0 = None,
-                    scache_only = False
+                    scache_only = False,
+                    num_processes = 8
                     ):
     """ 
     S_methods arg optionally allows you to add extra kwargs (e.g. ASDP instead of SDP)
@@ -364,89 +499,27 @@ def compare_methods(
 
     # Construct oracle (curse of dimensionality applies here)
     feature_methods = [fname for fname in feature_fns]
-    columns = ['sample', 'cutoff', 'feature_fn', 'link_method', 'power', 'fdp', 'oracle_type']
-    oracle_results = pd.DataFrame(columns = columns)
+    oracle_results = pd.DataFrame(columns = ORACLE_COLUMNS)
 
+    # Helper function which will be used for multiprocessing ----------------------
+    partial_eval_oracles = partial(eval_oracles, 
+        n = n, p = p, q = q, X = X, y = y, corr_matrix = corr_matrix, 
+        Q = Q, beta = beta, sample_kwargs = sample_kwargs,
+        link_methods = link_methods, feature_fns = feature_fns, 
+        all_cutoffs = all_cutoffs, all_groups = all_groups, 
+        S_matrixes = S_matrixes, time0 = time0, copies = copies)
+
+    # End helper function ---------------------------
     sys.stdout.write("Picking the best oracles!\n")
-    for j in range(num_data_samples):
-
-        sys.stdout.write(f'At data sample {j} for oracle, time is {time.time() - time0}\n')
-
-        # Create X and y
-        X, y, beta2, Q2, corr_matrix2 = knockadapt.graphs.sample_data(
-           n = n, p = p, corr_matrix = corr_matrix, Q = Q, beta = beta,
-           **sample_kwargs
+    with Pool(num_processes) as thepool:
+        all_outputs_to_add = thepool.map(
+            partial_eval_oracles, list(range(num_data_samples))
         )
 
-        # Sanity check
-        if np.abs(beta2 - beta).sum() != 0:
-            raise ValueError('Uh oh, DGP is being changed! (beta)')
-        if np.abs(corr_matrix2 - corr_matrix).sum() != 0:
-            raise ValueError('Uh oh, DGP is being changed! (corr_matrix)')
-        if np.abs(Q2 - Q).sum() != 0:
-            raise ValueError('Uh oh, DGP is being changed! (Q)')
-
-        # Iterate through link methods and feature methods
-        for link_method in link_methods:
-            for feature_method in feature_fns:
-
-                # Right feature statistic generator
-                feature_stat_fn = feature_fns[feature_method]
-
-                # Run knockoffs for each cutoff
-                for cutoff in all_cutoffs[link_method]:
-
-                    # Get the group and S matrix
-                    groups = all_groups[link_method][cutoff]
-                    S = S_matrixes[link_method][cutoff]
-
-                    # Oracle for full data
-                    fdps, powers, hat_powers = knockadapt.adaptive.evaluate_grouping(
-                        X = X, y = y, corr_matrix = corr_matrix, groups = groups, q = q,
-                        non_nulls = beta, S = S, copies = copies, verbose = False,
-                        feature_stat_fn = feature_stat_fn
-                    )
-
-                    # Oracle for half data - does NOT use sample recycling
-                    half_fdps, half_powers, half_hat_powers = knockadapt.adaptive.evaluate_grouping(
-                        X = X[0:int(n/2)], y = y[0:int(n/2)], 
-                        corr_matrix = corr_matrix, groups = groups, q = q,
-                        non_nulls = beta, S = S, copies = copies, verbose = False,
-                        feature_stat_fn = feature_stat_fn
-                    )
-
-                    # Oracle for half data which DOES use sample recycling
-                    rec_fdps, rec_powers, rec_hat_powers = knockadapt.adaptive.evaluate_grouping(
-                        X = X[0:int(n/2)], y = y[0:int(n/2)], 
-                        corr_matrix = corr_matrix, groups = groups, q = q,
-                        non_nulls = beta, S = S, copies = copies, verbose = False,
-                        feature_stat_fn = feature_stat_fn
-                    )
-
-                    # Add power to regular oracle
-                    to_add = pd.DataFrame(
-                        columns = columns,
-                        data = [[j, cutoff, feature_method, link_method, 
-                                powers.mean(), fdps.mean(), 'oracle']]
-                    )
-                    oracle_results = oracle_results.append(to_add)
-
-                    # Add power to non-recycling split oracle
-                    half_to_add = pd.DataFrame(
-                        columns = columns,
-                        data = [[j, cutoff, feature_method, link_method, 
-                                 half_powers.mean(), half_fdps.mean(), 'split_oracle']]
-                    )
-                    oracle_results = oracle_results.append(half_to_add)
-
-                    # Add power to recycling split oracle
-                    rec_to_add = pd.DataFrame(
-                        columns = columns,
-                        data = [[j, cutoff, feature_method, link_method, 
-                                rec_powers.mean(), rec_fdps.mean(), 'rec_oracle']]
-                    )
-                    oracle_results = oracle_results.append(rec_to_add)
-
+    # Put it all together
+    for process_output in all_outputs_to_add:
+        for to_add in process_output:
+            oracle_results = oracle_results.append(to_add)
 
     # Pick best cutoffs based on mean power for each oracle
     all_oracle_cutoffs = {}
@@ -464,149 +537,31 @@ def compare_methods(
 
     sys.stdout.write(f'Finished creating oracles: comparing methods, time is {time.time() - time0}\n')
 
-    # Initialize output, begin loop
+    # Initialize output to actually compare methods
     output_df = pd.DataFrame(columns = FINAL_COLUMNS)
-    for j in range(num_data_samples):
 
-        sys.stdout.write(f'At data sample {j} for methods, time is {time.time() - time0}\n')
-
-        # Create X and y
-        X, y, beta2, Q2, corr_matrix2 = knockadapt.graphs.sample_data(
-           n = n, p = p, corr_matrix = corr_matrix, Q = Q, beta = beta,
-           **sample_kwargs
+    # Create helper function for multiprocessing
+    partial_one_sample_comparison = partial(one_sample_comparison, 
+        n = n, p = p, q = q, X = X, y = y, corr_matrix = corr_matrix, 
+        Q = Q, beta = beta, sample_kwargs = sample_kwargs,
+        links = links, all_oracle_cutoffs = all_oracle_cutoffs,
+        link_methods = link_methods, feature_fns = feature_fns, 
+        all_cutoffs = all_cutoffs, all_groups = all_groups, 
+        S_matrixes = S_matrixes, time0 = time0, copies = copies,
+        reduction = reduction
+    )
+    with Pool(num_processes) as thepool:
+        comparisons_to_add = thepool.map(
+            partial_one_sample_comparison, list(range(num_data_samples))
         )
 
-        # Iterate through link methods and feature methods
-        for link_method in link_methods:
-            for feature_method in feature_fns:
+    sys.stdout.write(f'Finished: now just combining outputs, time is {time.time() - time0}\n')
 
-                # Right feature statistic generator
-                feature_stat_fn = feature_fns[feature_method]
-                link = links[link_method]
-
-                # Calcualte oracle powers, fdrs, etc ---------------
-                trainX = X[0:int(n/2)]
-                trainy = y[0:int(n/2)]
-                for oracle_type in all_oracle_cutoffs:
-
-                    # Cutoff, links, groups
-                    oracle_cutoffs = all_oracle_cutoffs[oracle_type]
-                    oracle_cutoff = oracle_cutoffs.loc[feature_method, link_method]
-                    groups = all_groups[link_method][oracle_cutoff]
-                    num_groups = np.unique(groups).shape[0]
-                    S = S_matrixes[link_method][oracle_cutoff]
-
-                    # One of the oracles uses split data
-                    if oracle_type == 'split_oracle':
-                        X_to_use = trainX
-                        y_to_use = trainy
-                    else:
-                        X_to_use = X
-                        y_to_use = y
-                    
-                    # One of the oracles recycles
-                    if oracle_type == 'rec_oracle':
-                        recycle_up_to = int(n/2)
-                    else:
-                        recycle_up_to = None
-
-                    # Calculate oracle power --------
-                    o_fdps, o_powers, o_hat_powers = knockadapt.adaptive.evaluate_grouping(
-                        X = X_to_use, y = y_to_use, corr_matrix = corr_matrix, 
-                        groups = groups, q = q, non_nulls = beta,
-                         S = S, copies = copies, verbose = False,
-                        feature_stat_fn = feature_stat_fn,
-                        recycle_up_to = recycle_up_to
-                    )
-                    oracle_fdr = o_fdps.mean()
-                    oracle_power = o_powers.mean()
-                    oracle_empirical_power = o_hat_powers.mean()
-
-                    # Add to dataframe
-                    output_df = add_to_final_df(
-                        df = output_df, fdr = oracle_fdr, power = oracle_power,
-                        epower = oracle_empirical_power,
-                        cutoff = oracle_cutoff, num_groups = num_groups,
-                        link_method = link_method, 
-                        feature_fn = feature_method, 
-                        sample = j, split_type = oracle_type
-                    )
-
-
-                # Find cutoffs, list of groups for other methods -----
-                link_cutoffs = all_cutoffs[link_method]
-                link_groups = all_groups[link_method]
-                link_S_matrices = S_matrixes[link_method]
-
-                # Calculate adaptive power for nonsplit method -----
-                _, ns_hat_powers, ns_fdps, ns_powers, _ = knockadapt.adaptive.select_highest_power(
-                    X = X, y = y, corr_matrix = corr_matrix, link = link,
-                    q = q, cutoffs = link_cutoffs, non_nulls = beta, 
-                    reduction = reduction,
-                    S_matrices = link_S_matrices,
-                    copies = copies, verbose = False, 
-                    feature_stat_fn = feature_stat_fn,
-                )
-
-                # Find non-sample-split powers
-                nonsplit_selection = np.argmax(np.array(ns_hat_powers))
-                nonsplit_cutoff = link_cutoffs[nonsplit_selection]
-                nonsplit_num_groups = np.unique(link_groups[nonsplit_cutoff]).shape[0]
-                nonsplit_power = ns_powers[nonsplit_selection]
-                nonsplit_empirical_power = ns_hat_powers[nonsplit_selection]
-                nonsplit_fdr = ns_fdps[nonsplit_selection]
-
-                # Add to dataframe
-                output_df = add_to_final_df(
-                    df = output_df, fdr = nonsplit_fdr, power = nonsplit_power,
-                    epower = nonsplit_empirical_power,
-                    cutoff = nonsplit_cutoff,
-                    num_groups = nonsplit_num_groups, 
-                    link_method = link_method,
-                    feature_fn = feature_method,
-                    sample = j, split_type = 'nonsplit'
-                )
-
-                # Repeat but for sample-splitting method ----------
-
-                # Split in half and "train"
-                _, spl_hat_powers, spl_fdps, spl_powers, _ = knockadapt.adaptive.select_highest_power(
-                    X = trainX, y = trainy, corr_matrix = corr_matrix, link = link,
-                    q = q, cutoffs = link_cutoffs, non_nulls = beta, 
-                    reduction = reduction,
-                    S_matrices = link_S_matrices,
-                    copies = copies, verbose = False, 
-                    feature_stat_fn = feature_stat_fn,
-                )
-
-                # Pick our best grouping/expected power
-                expected_empirical_power = max(spl_hat_powers)
-                selected_cutoff = link_cutoffs[np.argmax(np.array(hat_powers))]
-                selected_grouping = link_groups[selected_cutoff]
-                spl_num_groups = np.unique(selected_grouping).shape[0]
-
-                # Now test to see what discoveries we find
-                # This involves knockoff recycling 
-                spl_fdps, spl_powers, spl_hat_powers = knockadapt.adaptive.evaluate_grouping(
-                    X = X, y = y, corr_matrix = corr_matrix, groups = groups, q = q, 
-                    non_nulls = beta, S = S, copies = copies, verbose = False,
-                    recycle_up_to = int(n/2),
-                    feature_stat_fn = feature_stat_fn
-                )
-                actual_fdr = spl_fdps.mean()
-                actual_power = spl_powers.mean()
-                actual_empirical_power = spl_hat_powers.mean()
-
-                # Add to dataframe
-                output_df = add_to_final_df(
-                    df = output_df, fdr = actual_fdr, power = actual_power,
-                    epower = actual_empirical_power,
-                    cutoff = selected_cutoff, 
-                    num_groups = spl_num_groups,
-                    link_method = link_method,
-                    feature_fn = feature_method,
-                    sample = j, split_type = 'actual'
-                )
+    # Combine outputs
+    for list_to_add in comparisons_to_add:
+        for to_add in list_to_add:
+            output_df = output_df.append(to_add, ignore_index = True)
+    
 
     return output_df, oracle_results, S_matrixes
 
