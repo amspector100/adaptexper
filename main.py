@@ -18,7 +18,7 @@ except ImportError:
 	file_directory = os.path.dirname(os.path.abspath(__file__))
 	parent_directory = os.path.split(file_directory)[0]
 	knockoff_directory = parent_directory + '/knockadapt'
-	print(f'Knockoff dir is {knockoff_directory}')
+	sys.stdout.write(f'Knockoff dir is {knockoff_directory}')
 	sys.path.insert(0, os.path.abspath(knockoff_directory))
 	import knockadapt
 	from knockadapt.knockoff_stats import group_lasso_LCD
@@ -172,7 +172,7 @@ def main(args):
 	for n in ns:
 
 		# Log that we've made it this far
-		print(f'Running simulation for n = {n}')
+		sys.stdout.write(f'Running simulation for n = {n}')
 
 		# Run method comparison function - note the 
 		# S matrices should be cached 
