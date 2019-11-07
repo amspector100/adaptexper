@@ -102,6 +102,11 @@ def main(args):
 					help='If true, only compute S matrices, do nothing else (default: False)',
 					default = False)
 
+	parser.add_argument('--numprocesses', dest = 'numprocesses',
+					type=int,
+					help='How many processes to use in multiprocessing package (default: 8)',
+					default = 8)
+
 	args = parser.parse_args()
 	sys.stdout.write(f'Parsed args are {args} \n')
 
@@ -114,6 +119,7 @@ def main(args):
 	plot = args.plot
 	scache = args.scache
 	recompute = args.recompute
+	num_processes = args.numprocesses
 
 	# Generate S methods
 	S_kwargs = {'objective':'norm', 
@@ -213,7 +219,8 @@ def main(args):
 				num_data_samples = num_datasets,
 				sample_kwargs = sample_kwargs,
 				time0 = time0,
-				scache_only = scache
+				scache_only = scache,
+				num_processes = num_processes
 			)
 			# Possibly exit if we only need to compute S matrices
 			if scache:
