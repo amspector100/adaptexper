@@ -275,12 +275,6 @@ def main(args):
 		all_results.to_csv(all_fname_csv)
 		all_oracle_results.to_csv(all_fname_oracle_csv)
 
-	fdr_results = all_results.loc[all_results['variable'] == 'fdr']
-	print(fdr_results.groupby(['split_type', 'n'])['value'].mean())
-
-	power_results = all_results.loc[all_results['variable'] == 'power']
-	print(power_results.groupby(['split_type', 'n'])['value'].mean())
-
 	return all_results, all_oracle_results
 
 if __name__ == '__main__':
