@@ -22,6 +22,32 @@ FINAL_COLUMNS = ['link_method', 'feature_fn', 'sample', 'cutoff',
 ORACLE_COLUMNS = ['sample', 'cutoff', 'feature_fn', 'link_method',
                   'power', 'fdp', 'oracle_type']
 
+### -------------- HELPER FUNCTIONS FOR MULTIPROCESSING -----------------
+
+
+def compute_S_matrix(S_group, link_method, cutoff,
+                    X, corr_matrix, invSigma, groups, 
+                    S_kwargs, S_method, p, seed, sample_kwargs):
+    """ Helper function for multiprocessing """ 
+
+    # Compute the matrix if it hasn't been loaded
+    if S_group is None:
+
+        _, S_group = knockadapt.knockoffs.group_gaussian_knockoffs(
+            X = X, Sigma = corr_matrix, groups = groups,
+            invSigma = invSigma, return_S = True, **S_kwargs,
+            **S_method[1]
+        )
+
+        # But save it!
+        cache_S_matrix(S_group, 
+                       p, seed, 
+                       cutoff, 
+                       link_method, 
+                       sample_kwargs)
+
+    return S_group, link_method, cutoff
+
 
 def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                  link_methods, feature_fns, all_cutoffs, all_groups,
@@ -447,6 +473,9 @@ def compare_methods(
         S_methods = [{} for _ in link_methods]
 
     S_matrixes = {link_method:{} for link_method in link_methods}
+
+    # Assemble the list of parameters to pass to the multiprocessing module
+    all_arguments = []
     for link_method, S_method in zip(link_methods, S_methods):
 
         # Retrive groups/cutoffs for this link method
@@ -465,26 +494,32 @@ def compare_methods(
                                     cutoff, link_method,
                                     sample_kwargs)
 
-            # Else compute the matrix
-            if S_group is None:
-
-                _, S_group = knockadapt.knockoffs.group_gaussian_knockoffs(
-                    X = X, Sigma = corr_matrix, groups = groups,
-                    invSigma = Q, return_S = True, **S_kwargs,
-                    **S_method[1]
+            if S_group is not None:
+                S_matrixes[link_method][cutoff] = S_group
+            else:
+                all_arguments.append(
+                    (S_group, link_method, cutoff,
+                     X, corr_matrix, Q, groups, 
+                     S_kwargs, S_method, p, seed,
+                     sample_kwargs)
                 )
 
-                # But save it!
-                cache_S_matrix(S_group, 
-                               p, seed, 
-                               cutoff, 
-                               link_method, 
-                               sample_kwargs)
+    # Pass to multiprocessor
+    if num_processes == 1:
+        all_S_outputs = []
+        for arguments in all_arguments:
+            all_S_outputs.append(compute_S_matrix(*arguments))
+    else:
+        with Pool(min(len(arguments), num_processes)) as thepool:
+            all_S_outputs = thepool.starmap(
+                compute_S_matrix, all_arguments
+            )
 
-            S_matrixes[link_method][cutoff] = S_group
+    for (S_group, link_method, cutoff) in all_S_outputs:
+        S_matrixes[link_method][cutoff] = S_group
 
     if scache_only:
-        sys.stdout.write('Terminating early because scache_only is true')
+        sys.stdout.write(f'Terminating early because scache_only is true, time is {time.time() - time0}')
         return None
 
     # Construct oracle (curse of dimensionality applies here)
