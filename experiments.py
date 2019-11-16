@@ -23,57 +23,6 @@ ORACLE_COLUMNS = ['sample', 'cutoff', 'feature_fn', 'link_method',
                   'power', 'fdp', 'oracle_type']
 
 
-# Plotting functions ------------------------------------------
-def add_extra_x_axis(ax, cutoffs, Ms): 
-    """ This function has global effects, beware!"""
-    
-    # Add group size ticks for ax1
-    new_ax = ax.twiny()
-    old_ticks = ax.get_xticks()
-    new_ticks = []
-    for i, x in enumerate(cutoffs):
-        new_ticks.append(Ms[i])
-        
-    new_ax.set_xticks(old_ticks)
-    new_ax.set_xbound(ax.get_xbound())
-    new_ax.set_xticklabels(new_ticks)
-
-def plot_powers(x, hat_powers, fdps, powers, Ms,
-                x_label = 'Correlation cutoff'):
-    """ xs are cutoffs """
-    
-    # Np-ify
-    x = np.array(x)
-    hat_powers = np.array(hat_powers)
-    fdps = np.array(fdps)
-    powers = np.array(powers)
-    
-    # Plot!
-    fig, (ax0, ax1) = plt.subplots(ncols = 2, figsize = (16, 6))
-    ax0.plot(x, hat_powers, color = 'darkgreen', 
-             label = 'Empirical powers')
-    ax0.scatter(x, hat_powers, color = 'darkgreen', label = None)
-    ax0.plot(x, powers, color = 'navy', 
-             label = 'True powers')
-    ax0.scatter(x, powers, color = 'navy', label = None)
-    ax0.set_xticks(x)
-    ax0.legend()
-    ax0.set(title = 'Group Powers', xlabel = x_label, ylabel = 'Power')
-    add_extra_x_axis(ax0, x, Ms)
-    
-    # FDRs
-    ax1.plot(x, fdps, color = 'black', label = 'Observed')
-    ax1.scatter(x, fdps, color = 'black', label = None)
-    ax1.axhline(y = q, linestyle ='dashed', color = 'red', label = 'Targetted')
-    ax1.set_xticks(x)
-    ax1.legend()
-    ax1.set(title = 'FDRs', xlabel = x_label, ylabel = 'FDR')
-    add_extra_x_axis(ax1, x, Ms)
-
-    # Plot title
-    fig.suptitle(f'Group adaptive knockoffs for n = {n}, p = {p}, coefficient mag = {coeff_size}')
-    plt.show()
-
 def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                  link_methods, feature_fns, all_cutoffs, all_groups,
                  S_matrixes, time0, copies, compute_split_oracles = True):
@@ -108,6 +57,7 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
         raise ValueError('Uh oh, DGP is being changed! (Q)')
 
     # Iterate through link methods and feature methods
+    # to create inputs for multiprocessed S matrix
     outputs_to_add = []
     for link_method in link_methods:
         for feature_method in feature_fns:

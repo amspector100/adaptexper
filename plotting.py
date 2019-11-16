@@ -82,6 +82,8 @@ def plot_n_curve(path):
 		q = thefile.read()
 	q = float(q)
 	results = pd.read_csv(csv_path)
+	col_subset = [c for c in results.columns if c != 'sample']
+	results = results.drop_duplicates(col_subset)
 	n_vals = results['n'].unique()
 
 	# Figure out which column contains 'power'/'fdr' only:

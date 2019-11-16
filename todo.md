@@ -236,3 +236,49 @@ Small example of cluster use as well.
 1. Caching of previous runs
 2. Master plotting function
 3. Pull stuff onto local computer
+
+# Cluster size doubled
+
+janson_cascade has 288 nodes and if you submit to them
+newer, faster, cores (worth more than other cores)
+3 blades of 2 nodes of 48 cores
+
+# ASDP performance
+
+1. ErdosRenyi is not very clustery, 
+social networks follows power law for example
+
+Not really sure apriori how to define those clusters,
+but you would still expect to be able to interpret
+a friend group.
+
+You might actually combine these two things: I'm 
+only going to hierarchically cluster them if they're
+also friends, within one separation.
+
+Run something quite large with q = 0.1
+
+# SDP 
+
+KNOCKOFF ZOOM
+
+2. SDP is not trivially parallelizable, so 
+should use different cores.
+Parallelize as much as possible to the extent that
+paralleilization helps. (That works better
+when running the cluster at capacity).
+
+Look at cluster usage, see what happens.
+Feel comfortable emailing me: "I urgently need
+to run this."
+
+Analogue: |E - \theta| < some bound 
+Instead: Utility (expected power) < some bound
+
+# SuSie
+
+1. At some point pull their code,
+start comparing our methods to theirs
+2. Expected: their method will take
+forever, and also, ours will
+perform better for more effects.
