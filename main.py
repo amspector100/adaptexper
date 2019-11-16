@@ -112,6 +112,11 @@ def main(args):
 					help='To test the split oracles (default: False)',
 					default = False)
 
+	parser.add_argument('--reduction', dest = 'reduction',
+					type=int,
+					help='How many different groupings/cutoffs to test (default: 10)',
+					default = 10)
+
 	args = parser.parse_args()
 	sys.stdout.write(f'Parsed args are {args} \n')
 
@@ -126,6 +131,7 @@ def main(args):
 	recompute = args.recompute
 	num_processes = args.numprocesses
 	splitoracles = args.splitoracles
+	reduction = args.reduction
 
 	# Generate S methods
 	S_kwargs = {'objective':'norm', 
@@ -219,15 +225,18 @@ def main(args):
 				n = n,
 				q = q, 
 				S_methods = S_methods,
-				feature_fns = {'group_LCD':group_lasso_LCD},
+				feature_fns = {'group_LCD':group_lasso_LCD,
+								},
 				link_methods = link_methods,
 				S_kwargs = S_kwargs,
 				num_data_samples = num_datasets,
 				sample_kwargs = sample_kwargs,
 				time0 = time0,
+				seed = seed,
 				scache_only = scache,
 				num_processes = num_processes,
 				compute_split_oracles = splitoracles,
+				reduction = reduction
 			)
 			# Possibly exit if we only need to compute S matrices
 			if scache:
@@ -265,6 +274,12 @@ def main(args):
 		# Save
 		all_results.to_csv(all_fname_csv)
 		all_oracle_results.to_csv(all_fname_oracle_csv)
+
+	fdr_results = all_results.loc[all_results['variable'] == 'fdr']
+	print(fdr_results.groupby(['split_type', 'n'])['value'].mean())
+
+	power_results = all_results.loc[all_results['variable'] == 'power']
+	print(power_results.groupby(['split_type', 'n'])['value'].mean())
 
 	return all_results, all_oracle_results
 
