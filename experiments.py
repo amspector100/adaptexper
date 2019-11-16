@@ -510,7 +510,7 @@ def compare_methods(
         for arguments in all_arguments:
             all_S_outputs.append(compute_S_matrix(*arguments))
     else:
-        with Pool(min(len(arguments), num_processes)) as thepool:
+        with Pool(num_processes) as thepool:
             all_S_outputs = thepool.starmap(
                 compute_S_matrix, all_arguments
             )
@@ -519,7 +519,7 @@ def compare_methods(
         S_matrixes[link_method][cutoff] = S_group
 
     if scache_only:
-        sys.stdout.write(f'Terminating early because scache_only is true, time is {time.time() - time0}')
+        sys.stdout.write(f'Terminating early because scache_only is true, time is {time.time() - time0} \n')
         return None
 
     # Construct oracle (curse of dimensionality applies here)

@@ -76,12 +76,17 @@ def plot_csv(csv_path, q = None):
 def plot_n_curve(path): 
 	""" Creates FDR/power curve plots as n varies """
 
+	path = 'figures/v3/' + path
+
 	csv_path = path + '.csv'
 	q_path = path + '_q.txt'
 	with open(q_path, 'r') as thefile:
 		q = thefile.read()
 	q = float(q)
+
+	# Read data
 	results = pd.read_csv(csv_path)
+	results = results.drop('Unnamed: 0', axis = 'columns')
 	col_subset = [c for c in results.columns if c != 'sample']
 	results = results.drop_duplicates(col_subset)
 	n_vals = results['n'].unique()
@@ -111,7 +116,7 @@ def plot_n_curve(path):
 			)
 			+ stat_summary(geom = 'line')
 			+ stat_summary(aes(shape = 'split_type'), geom = 'point', size = 2.5)
-			+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_normal')
+			+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_boot')
 			+ facet_grid('feature_fn~link_method')
 			+ labs(title = new_path)
 			+ scale_x_continuous(breaks = n_vals)
