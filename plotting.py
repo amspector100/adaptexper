@@ -11,7 +11,13 @@ def plot_measurement_type(melted_results,
 						  yintercept = None):
 	""" Plotting and saving function """
 
-	results = melted_results.loc[melted_results['measurement'] == meas_type]
+
+	if 'power' in melted_results['variable'].unique():
+		var_column = 'variable'
+	else:
+		var_column = 'measurement'
+
+	results = melted_results.loc[melted_results[var_column] == meas_type]
 	results = results.rename(columns = {'value':meas_type})
 
 	g1 = (
@@ -141,6 +147,17 @@ def plot_n_curve(path):
 		)
 		g2.save(new_path)
 
+	# Plot for individual n for each n
+	for n in n_vals:
+
+		n = int(n)
+		new_path = path.replace('v3', 'v2')
+		split_new_path = new_path.split('_p')
+		if len(split_new_path) != 2:
+			raise IndexError('Could not analyze path name properly')
+		new_path = ''.join([split_new_path[0], f'_n{n}_p', split_new_path[1]])
+		new_path = new_path + '.csv'
+		plot_csv(new_path)
 
 	warnings.simplefilter("always")
 
