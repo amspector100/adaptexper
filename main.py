@@ -157,7 +157,7 @@ def main(args):
 	sample_kwargs['coeff_size'] = args.coef
 
 	# Initialize save directories
-	all_fname = f"figures/v3/seed{seed}_p{p}_N{num_datasets}/"
+	all_fname = f"data/v4/"
 	if not os.path.exists(all_fname):
 		os.makedirs(all_fname)
 	sample_string = [
@@ -165,13 +165,12 @@ def main(args):
 	]
 	sample_string = ('_').join(sample_string)
 	all_fname += sample_string
+	all_fname += f'/seed{seed}_p{p}/'
+	if not os.path.exists(all_fname):
+		os.makedirs(all_fname)
+	all_fname += f'q{q}_N{num_datasets}'
 	all_fname_csv = all_fname + '.csv'
 	all_fname_oracle_csv = all_fname + '_oracle.csv'
-
-	# Reminders
-	all_name_q = all_fname + '_q.txt'
-	with open(all_name_q, 'w') as thefile:
-		thefile.write(str(q))
 
 	# Fixed n 
 	if n != 0:
@@ -198,10 +197,10 @@ def main(args):
 	for n in ns:
 
 		# Create filename, check that we haven't already done this computation
-		fname = f"figures/v2/seed{seed}_n{n}_p{p}_N{num_datasets}/"
+		fname = f"data/v2/{sample_string}/seed{seed}_p{p}_n{n}"
 		if not os.path.exists(fname):
 			os.makedirs(fname)
-		fname += sample_string
+		fname = fname + f'/q{q}_N{num_datasets}'
 		fname_csv = fname + '.csv'
 		fname_oracle_csv = fname + '_oracle.csv'
 
