@@ -50,8 +50,9 @@ def compute_S_matrix(S_group, link_method, cutoff,
 
 
 def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
-                 link_methods, feature_fns, all_cutoffs, all_groups,
-                 S_matrixes, time0, copies, compute_split_oracles = True):
+                 link_methods, feature_fns, feature_fn_kwargs,
+                 all_cutoffs, all_groups, S_matrixes, time0, copies, 
+                 compute_split_oracles = True):
     """ Helper function for multiprocessing: evaluates the oracles, returns
     a list of rows to add to the oracle results dataframe.
     Sorry for all the arguments, it's unavoidable with the multiprocessing package
@@ -90,6 +91,7 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
 
             # Right feature statistic generator
             feature_stat_fn = feature_fns[feature_method]
+            feature_stat_kwargs = feature_fn_kwargs[feature_method]
 
             # Run knockoffs for each cutoff
             for cutoff in all_cutoffs[link_method]:
@@ -102,7 +104,7 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 fdps, powers, hat_powers = knockadapt.adaptive.evaluate_grouping(
                     X = X, y = y, corr_matrix = corr_matrix, groups = groups, q = q,
                     non_nulls = beta, S = S, copies = copies, verbose = False,
-                    feature_stat_fn = feature_stat_fn
+                    feature_stat_fn = feature_stat_fn, feature_stat_kwargs = feature_stat_kwargs,
                 )
 
                 # Add power to regular oracle
@@ -122,7 +124,7 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                         X = X[0:int(n/2)], y = y[0:int(n/2)], 
                         corr_matrix = corr_matrix, groups = groups, q = q,
                         non_nulls = beta, S = S, copies = copies, verbose = False,
-                        feature_stat_fn = feature_stat_fn
+                        feature_stat_fn = feature_stat_fn, feature_stat_kwargs = feature_stat_kwargs,
                     )
 
                     # Add to outputs
@@ -140,7 +142,7 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                         X = X[0:int(n/2)], y = y[0:int(n/2)], 
                         corr_matrix = corr_matrix, groups = groups, q = q,
                         non_nulls = beta, S = S, copies = copies, verbose = False,
-                        feature_stat_fn = feature_stat_fn
+                        feature_stat_fn = feature_stat_fn, feature_stat_kwargs = feature_stat_kwargs,
                     )
 
                     # Add power to recycling split oracle
@@ -188,7 +190,7 @@ def to_add_to_final_df(fdr,
     return output_list
 
 def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
-                          reduction, links, link_methods, feature_fns, 
+                          reduction, links, link_methods, feature_fns, feature_fn_kwargs,
                           all_cutoffs, all_groups, S_matrixes, time0,
                           copies, all_oracle_cutoffs):
     """ Compares methods with one sample - this is a helper function
@@ -216,6 +218,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
 
             # Right feature statistic generator
             feature_stat_fn = feature_fns[feature_method]
+            feature_stat_kwargs = feature_fn_kwargs[feature_method]
             link = links[link_method]
 
             # Calcualte oracle powers, fdrs, etc ---------------
@@ -250,6 +253,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                     groups = groups, q = q, non_nulls = beta,
                      S = S, copies = copies, verbose = False,
                     feature_stat_fn = feature_stat_fn,
+                    feature_stat_kwargs = feature_stat_kwargs,
                     recycle_up_to = recycle_up_to
                 )
                 oracle_fdr = o_fdps.mean()
@@ -281,6 +285,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 S_matrices = link_S_matrices,
                 copies = copies, verbose = False, 
                 feature_stat_fn = feature_stat_fn,
+                feature_stat_kwargs = feature_stat_kwargs,
             )
 
             # Find non-sample-split powers
@@ -334,6 +339,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 S_matrices = link_S_matrices,
                 copies = copies, verbose = False, 
                 feature_stat_fn = feature_stat_fn,
+                feature_stat_kwargs = feature_stat_kwargs,
             )
 
             # Pick our best grouping/expected power
@@ -348,7 +354,8 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 X = X, y = y, corr_matrix = corr_matrix, groups = groups, q = q, 
                 non_nulls = beta, S = S, copies = copies, verbose = False,
                 recycle_up_to = int(n/2),
-                feature_stat_fn = feature_stat_fn
+                feature_stat_fn = feature_stat_fn,
+                feature_stat_kwargs = feature_stat_kwargs,
             )
             actual_fdr = spl_fdps.mean()
             actual_power = spl_powers.mean()
@@ -381,6 +388,7 @@ def compare_methods(
                     split = True,
                     sample_kwargs = {'coeff_size':10,},
                     feature_fns = {'LSM':calc_nongroup_LSM},
+                    feature_fn_kwargs = {},
                     S_kwargs = {'objective':'norm', 'norm_type':'fro'},
                     copies = 1,
                     seed = 110,
@@ -524,6 +532,9 @@ def compare_methods(
 
     # Construct oracle (curse of dimensionality applies here)
     feature_methods = [fname for fname in feature_fns]
+    for fname in feature_methods:
+        if fname not in feature_fn_kwargs:
+            feature_fn_kwargs[fname] = {}
     oracle_results = pd.DataFrame(columns = ORACLE_COLUMNS)
 
     # Helper function which will be used for multiprocessing ----------------------
@@ -531,6 +542,7 @@ def compare_methods(
         n = n, p = p, q = q, X = X, y = y, corr_matrix = corr_matrix, 
         Q = Q, beta = beta, sample_kwargs = sample_kwargs,
         link_methods = link_methods, feature_fns = feature_fns, 
+        feature_fn_kwargs = feature_fn_kwargs,
         all_cutoffs = all_cutoffs, all_groups = all_groups, 
         S_matrixes = S_matrixes, time0 = time0, copies = copies,
         compute_split_oracles = compute_split_oracles
@@ -580,6 +592,7 @@ def compare_methods(
         Q = Q, beta = beta, sample_kwargs = sample_kwargs,
         links = links, all_oracle_cutoffs = all_oracle_cutoffs,
         link_methods = link_methods, feature_fns = feature_fns, 
+        feature_fn_kwargs = feature_fn_kwargs,
         all_cutoffs = all_cutoffs, all_groups = all_groups, 
         S_matrixes = S_matrixes, time0 = time0, copies = copies,
         reduction = reduction

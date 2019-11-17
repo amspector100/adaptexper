@@ -225,8 +225,8 @@ def main(args):
 				n = n,
 				q = q, 
 				S_methods = S_methods,
-				feature_fns = {'group_LCD':group_lasso_LCD,
-								},
+				feature_fns = {'group_LCD':group_lasso_LCD},
+				feature_fn_kwargs = {},
 				link_methods = link_methods,
 				S_kwargs = S_kwargs,
 				num_data_samples = num_datasets,
@@ -289,8 +289,6 @@ if __name__ == '__main__':
 		import pstats
 		p = pstats.Stats('profile')
 		p.strip_dirs().sort_stats('cumulative').print_stats(50)
-
-
-
-
-	sys.exit(main(sys.argv))
+		
+	else:
+		sys.exit(main(sys.argv))
