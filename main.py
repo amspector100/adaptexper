@@ -26,6 +26,18 @@ except ImportError:
 import experiments
 
 
+def str2bool(v):
+	""" Helper function, converts strings to boolean vals""" 
+	if isinstance(v, bool):
+		return v
+	if v.lower() in ('yes', 'true', 't', 'y', '1'):
+		return True
+	elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+		return False
+	else:
+		raise argparse.ArgumentTypeError('Boolean value expected.')
+
+
 def main(args):
 	""" Simulates power and FDR of various knockoff methods """
 
@@ -117,7 +129,13 @@ def main(args):
 					help='How many different groupings/cutoffs to test (default: 10)',
 					default = 10)
 
+	parser.add_argument('--pyglmnet', dest = 'pyglmnet',
+					type=str,
+					help='Whether to use pyglmnet as the lasso backend (default: True)',
+					default = str)
+
 	args = parser.parse_args()
+	args.pyglmnet = str2bool(args.pyglmnet)
 	sys.stdout.write(f'Parsed args are {args} \n')
 
 	# Retreive values
@@ -132,6 +150,7 @@ def main(args):
 	num_processes = args.numprocesses
 	splitoracles = args.splitoracles
 	reduction = args.reduction
+	use_pyglm = args.pyglmnet
 
 	# Generate S methods
 	S_kwargs = {'objective':'norm', 
@@ -225,7 +244,7 @@ def main(args):
 				q = q, 
 				S_methods = S_methods,
 				feature_fns = {'group_LCD':group_lasso_LCD},
-				feature_fn_kwargs = {},
+				feature_fn_kwargs = {'group_LCD':{'use_pyglm':use_pyglm}},
 				link_methods = link_methods,
 				S_kwargs = S_kwargs,
 				num_data_samples = num_datasets,
