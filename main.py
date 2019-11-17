@@ -132,7 +132,7 @@ def main(args):
 	parser.add_argument('--pyglmnet', dest = 'pyglmnet',
 					type=str,
 					help='Whether to use pyglmnet as the lasso backend (default: True)',
-					default = str)
+					default = 'True')
 
 	args = parser.parse_args()
 	args.pyglmnet = str2bool(args.pyglmnet)
