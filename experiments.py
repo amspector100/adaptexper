@@ -300,8 +300,6 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
             nonsplit_power = ns_powers[nonsplit_selection]
             nonsplit_empirical_power = ns_hat_powers[nonsplit_selection]
             nonsplit_fdr = ns_fdps[nonsplit_selection]
-            print(ns_powers)
-            print(ns_hat_powers)
 
             # Add to output
             to_add = to_add_to_final_df(
