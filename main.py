@@ -180,7 +180,6 @@ def main(args):
 		sample_kwargs['b'] = args.b
 	if args.covmethod.lower() == 'daibarber2016':
 		sample_kwargs['gamma'] = args.gamma
-		sample_kwargs.pop('coeff_size')
 	else:
 		sample_kwargs['coeff_size'] = args.coef
 
