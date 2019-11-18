@@ -55,7 +55,7 @@ def main(args):
 						default = 50)
 
 	parser.add_argument('--q', dest = 'q',
-						type=int, 
+						type=float, 
 						help='Level of FDR control (default: .25)',
 						default = 0.25)
 
@@ -96,8 +96,13 @@ def main(args):
 
 	parser.add_argument('--b', dest = 'b',
 						type=float,
-						help='b parameter when samplign AR1 correlations from Beta(a,b) (default: 1)',
+						help='b parameter when sampling AR1 correlations from Beta(a,b) (default: 1)',
 						default = 1)
+
+	parser.add_argument('--gamma', dest = 'gamma',
+						type=int,
+						help='gamma parameter when sampling daibarber2016 graphs (default: 0)',
+						default = 0)
 
 	parser.add_argument('--coef', dest = 'coef',
 						type=float,
@@ -173,7 +178,11 @@ def main(args):
 	if args.covmethod.lower() == 'ar1':
 		sample_kwargs['a'] = args.a
 		sample_kwargs['b'] = args.b
-	sample_kwargs['coeff_size'] = args.coef
+	if args.covmethod.lower() == 'daibarber2016':
+		sample_kwargs['gamma'] = args.gamma
+		sample_kwargs.pop('coeff_size')
+	else:
+		sample_kwargs['coeff_size'] = args.coef
 
 	# Initialize save directories
 	all_fname = f"data/v4/"
