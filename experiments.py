@@ -229,6 +229,11 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 # Cutoff, links, groups
                 oracle_cutoffs = all_oracle_cutoffs[oracle_type]
                 oracle_cutoff = oracle_cutoffs.loc[feature_method, link_method]
+                
+                # In the case of the global null, sometimes there's no cutoff
+                if np.isnan(oracle_cutoff):
+                    oracle_cutoff = all_cutoffs[link_method][0]
+
                 groups = all_groups[link_method][oracle_cutoff]
                 num_groups = np.unique(groups).shape[0]
                 S = S_matrixes[link_method][oracle_cutoff]
