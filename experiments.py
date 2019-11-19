@@ -22,6 +22,18 @@ FINAL_COLUMNS = ['link_method', 'feature_fn', 'sample', 'cutoff',
 ORACLE_COLUMNS = ['sample', 'cutoff', 'feature_fn', 'link_method',
                   'power', 'fdp', 'oracle_type']
 
+### Helper function for consistency
+
+def test_DGP_consistency(
+        beta, beta2, corr_matrix, corr_matrix2, Q, Q2
+    ):
+    if np.abs(beta2 - beta).sum() != 0:
+        raise ValueError('Uh oh, DGP is being changed! (beta)')
+    if np.abs(corr_matrix2 - corr_matrix).sum() != 0:
+        raise ValueError('Uh oh, DGP is being changed! (corr_matrix)')
+    if np.abs(Q2 - Q).sum() != 0:
+        raise ValueError('Uh oh, DGP is being changed! (Q)')
+
 ### -------------- HELPER FUNCTIONS FOR MULTIPROCESSING -----------------
 
 
@@ -76,12 +88,7 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
     np.random.set_state(st0)
 
     # Sanity check
-    if np.abs(beta2 - beta).sum() != 0:
-        raise ValueError('Uh oh, DGP is being changed! (beta)')
-    if np.abs(corr_matrix2 - corr_matrix).sum() != 0:
-        raise ValueError('Uh oh, DGP is being changed! (corr_matrix)')
-    if np.abs(Q2 - Q).sum() != 0:
-        raise ValueError('Uh oh, DGP is being changed! (Q)')
+    test_DGP_consistency(beta, beta2, corr_matrix, corr_matrix2, Q, Q2)
 
     # Iterate through link methods and feature methods
     # to create inputs for multiprocessed S matrix
@@ -382,9 +389,10 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
 
 
 def compare_methods(
-                    corr_matrix,
-                    beta,
+                    corr_matrix = None,
+                    beta = None,
                     Q = None,
+                    p = None,
                     n = 500, 
                     q = 0.25, 
                     num_data_samples = 10,
@@ -418,17 +426,30 @@ def compare_methods(
         np.random.seed(seed)
 
     # Get p, Q, reduction
-    p = corr_matrix.shape[0]
-    if Q is None:
+    if corr_matrix is not None:
+        p = corr_matrix.shape[0]
+    if Q is None and corr_matrix is not None:
         Q = knockadapt.utilities.chol2inv(corr_matrix)
     if reduction is None:
         reduction = 10
 
     # Sample data for the first time, create links
-    X, y, _, _, _ = knockadapt.graphs.sample_data(
+    X, y, beta2, Q2, corr_matrix2 = knockadapt.graphs.sample_data(
        n = n, p = p, corr_matrix = corr_matrix, 
        Q = Q, beta = beta, **sample_kwargs
     )
+
+    # Make sure we aren't changing the DGP 
+    if corr_matrix is None:
+        corr_matrix = corr_matrix2
+    if beta is None:
+        beta = beta2
+    if Q is None:
+        Q = Q2
+    test_DGP_consistency(
+        beta, beta2, corr_matrix, corr_matrix2, Q, Q2
+    )
+
 
     # Sometimes the link methods are the same because we're also comparing
     # S generation methods (e.g. ASDP vs SDP), so might have to rename them

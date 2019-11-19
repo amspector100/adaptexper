@@ -3,14 +3,18 @@
 import os
 import numpy as np
 
+# Global list of kwargs which aren't important for S generation
+beta_kwargs = ['coeff_size', 'sparsity', 'k']
+
 def construct_S_path(p, seed, cutoff,
 					 link_method, sample_kwargs,
 					 roundto = 5):
 
 	# Round cutoff and remove useless string
 	cutoff = str(round(cutoff, roundto))
-	if 'coeff_size' in sample_kwargs:
-		sample_kwargs.pop('coeff_size')
+	for arg in beta_kwargs:
+		if arg in sample_kwargs:
+			sample_kwargs.pop(arg)
 
 	# Turn kwargs into a string
 	sample_string = [

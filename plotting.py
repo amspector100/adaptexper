@@ -1,7 +1,12 @@
+import os
 import sys
 import warnings
+import numpy as np
 import pandas as pd
+
+import matplotlib.pyplot as plt
 warnings.filterwarnings("ignore")
+import plotnine
 from plotnine import *
 warnings.simplefilter("always")
 
@@ -82,20 +87,32 @@ def plot_csv(csv_path, q = None):
 def plot_n_curve(path): 
 	""" Creates FDR/power curve plots as n varies """
 
-	path = 'figures/v3/' + path
 
 	csv_path = path + '.csv'
-	q_path = path + '_q.txt'
-	with open(q_path, 'r') as thefile:
-		q = thefile.read()
-	q = float(q)
+	q = float(path.split('q')[-1].split('_')[0])
+	print(f"Parsed q is {q}")
+	if 'curve' in path:
+		curve_param = path.split('curve')[-1].split('/')[0]
+		print(f"Parsed curve_param is {curve_param}")
+	else:
+		curve_param = None
 
 	# Read data
 	results = pd.read_csv(csv_path)
 	results = results.drop('Unnamed: 0', axis = 'columns')
 	col_subset = [c for c in results.columns if c != 'sample']
-	results = results.drop_duplicates(col_subset)
+	#results = results.drop_duplicates(col_subset)
+
+	# Get some plotting values
 	n_vals = results['n'].unique()
+	if curve_param is not None:
+		if n_vals.shape[0] != 1:
+			raise ValueError(f"Cannot decide whether to plot power curve along n or {curve_param} axis")
+		x_breaks = [np.around(x, 2) for x in results[curve_param].unique()]
+		x_axis = curve_param
+	else:
+		x_breaks = n_vals
+		x_axis = 'n'
 
 	# Figure out which column contains 'power'/'fdr' only:
 	# this is helpful to deal with some legacy graphs
@@ -110,53 +127,67 @@ def plot_n_curve(path):
 	print('Plotting FDRs, powers')
 	for meas_type in results[var_column].unique():
 
-		# Path and subset
-		new_path = path + '_' + meas_type + '.SVG'
+		# Path
+		new_path = path + '/' + meas_type + '.SVG'
+		dirname = os.path.dirname(new_path)
+		if not os.path.exists(dirname):
+			os.makedirs(dirname)
+
+
+		# Subset
 		subset = results.loc[results[var_column] == meas_type]
 		subset = subset.rename(columns = {'value':meas_type})
 
 		# Plot
 		g2 = (
 			ggplot(subset, aes(
-				x = 'n', y = meas_type, color = 'split_type')
+				x = x_axis, y = meas_type, color = 'split_type')
 			)
 			+ stat_summary(geom = 'line')
 			+ stat_summary(aes(shape = 'split_type'), geom = 'point', size = 2.5)
 			+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_boot')
 			+ facet_grid('feature_fn~link_method')
 			+ labs(title = new_path)
-			+ scale_x_continuous(breaks = n_vals)
+			+ scale_x_continuous(breaks = x_breaks)
 		)
+		plotnine.options.figure_size = (10, 8)
 		g2.save(new_path)
 
 	# Plot average group sizes and average cutoffs
 	print('Plotting groups, cutoffs')
 	for col in ['num_groups', 'cutoff']:
 
-		new_path = path + '_' + col + '.SVG'
+		new_path = path + '/' + col + '.SVG'
+		dirname = os.path.dirname(new_path)
+		if not os.path.exists(dirname):
+			os.makedirs(dirname)
 		g2 = (
 			ggplot(subset, aes(
-				x = 'n', y = col, color = 'split_type')
+				x = x_axis, y = col, color = 'split_type')
 			)
 			+ stat_summary(geom = 'line')
 			+ stat_summary(aes(shape = 'split_type'), geom = 'point', size = 2.5)
 			+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_normal')
 			+ facet_grid('feature_fn~link_method')
 			+ labs(title = new_path)
-			+ scale_x_continuous(breaks = n_vals)
+			+ scale_x_continuous(breaks = x_breaks)
 		)
+		plotnine.options.figure_size = (10, 8)
 		g2.save(new_path)
 
 	# Plot for individual n for each n
 	for n in n_vals:
 
+		# Path
 		n = int(n)
-		new_path = path.replace('v3', 'v2')
+		new_path = path.replace('v4', 'v2')
 		split_new_path = new_path.split('_p')
 		if len(split_new_path) != 2:
 			raise IndexError('Could not analyze path name properly')
 		new_path = ''.join([split_new_path[0], f'_n{n}_p', split_new_path[1]])
 		new_path = new_path + '.csv'
+
+		# Plot
 		plot_csv(new_path)
 
 	warnings.simplefilter("always")

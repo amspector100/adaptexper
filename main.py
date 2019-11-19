@@ -37,6 +37,14 @@ def str2bool(v):
 	else:
 		raise argparse.ArgumentTypeError('Boolean value expected.')
 
+def get_sample_string(sample_kwargs):
+	""" Creates a string (for filenames) representing the sample kwargs""" 
+	sample_string = [
+		('').join([k.replace('_', ''), str(sample_kwargs[k])]) for k in sample_kwargs
+	]
+	sample_string = ('_').join(sample_string)
+	return sample_string
+
 
 def main(args):
 	""" Simulates power and FDR of various knockoff methods """
@@ -46,7 +54,7 @@ def main(args):
 
 	parser.add_argument('--n', dest = 'n',
 						type=int, 
-						help='Number of observations (default: 100). If n = 0, will run 10 sims between p/5 and 5p',
+						help='Number of observations (default: 100). If n = 0, will run 6 sims between p/4 and 4p',
 						default = 100)
 
 	parser.add_argument('--p', dest = 'p',
@@ -91,7 +99,7 @@ def main(args):
 
 	parser.add_argument('--a', dest = 'a',
 						type=float,
-						help='a parameter when samplign AR1 correlations from Beta(a,b) (default: 1)',
+						help='a parameter when sampling AR1 correlations from Beta(a,b) (default: 1)',
 						default = 1)
 
 	parser.add_argument('--b', dest = 'b',
@@ -139,6 +147,30 @@ def main(args):
 					help='Whether to use pyglmnet as the lasso backend (default: True)',
 					default = 'True')
 
+	parser.add_argument('--curve_param', dest = 'curve_param',
+					type=str,
+					help="""Vary this parameter to create a power/fdr curve with
+							8 evenly spaced values on a logarithmic/linear scale.
+							MUST be a valid argument to pass to sample_kwargs.
+							(default: '', no curve)',
+							""",
+					default = '')
+
+	parser.add_argument('--param_min', dest = 'param_min',
+					type=float,
+					help='Minimum value of parameter in power/fdr curve (default: 0)',
+					default = 0)
+
+	parser.add_argument('--param_max', dest = 'param_max',
+					type=float,
+					help='Maximum value of parameter in power/fdr curve (default: 1)',
+					default = 1)
+
+	parser.add_argument('--param_spacing', dest = 'param_spacing',
+					type=str,
+					help='How to space parameter in power/fdr curve (one of linear/log)',
+					default = 'linear')
+
 	args = parser.parse_args()
 	args.pyglmnet = str2bool(args.pyglmnet)
 	sys.stdout.write(f'Parsed args are {args} \n')
@@ -156,6 +188,7 @@ def main(args):
 	splitoracles = args.splitoracles
 	reduction = args.reduction
 	use_pyglm = args.pyglmnet
+	curve_param = args.curve_param.lower()
 
 	# Generate S methods
 	S_kwargs = {'objective':'norm', 
@@ -179,19 +212,23 @@ def main(args):
 		sample_kwargs['a'] = args.a
 		sample_kwargs['b'] = args.b
 	if args.covmethod.lower() == 'daibarber2016':
-		sample_kwargs['gamma'] = args.gamma
+		if curve_param != 'gamma':
+			sample_kwargs['gamma'] = args.gamma
 	else:
-		sample_kwargs['coeff_size'] = args.coef
+		if curve_param != 'coeff_size':
+			sample_kwargs['coeff_size'] = args.coef
 
 	# Initialize save directories
 	all_fname = f"data/v4/"
-	if not os.path.exists(all_fname):
-		os.makedirs(all_fname)
-	sample_string = [
-		('').join([k.replace('_', ''), str(sample_kwargs[k])]) for k in sample_kwargs
-	]
-	sample_string = ('_').join(sample_string)
+	sample_string = get_sample_string(sample_kwargs)
 	all_fname += sample_string
+		
+	# Possibly signify that we're doing a power curve
+	# for some parameter...
+	if curve_param != '':
+		all_fname += f'_curve{curve_param}'
+
+	# Add seed, p, q, N information
 	all_fname += f'/seed{seed}_p{p}/'
 	if not os.path.exists(all_fname):
 		os.makedirs(all_fname)
@@ -203,17 +240,42 @@ def main(args):
 	if n != 0:
 		ns = [n]
 	else:
-		ns = [p/4, p/2, p, 2*p, 4*p]
-		ns = [int(n) for n in ns]
+		if curve_param != '': 
+			ns = [p/4, p/2, p, 2*p, 4*p]
+			ns = [int(n) for n in ns]
+		else:
+			raise ValueError(f"Cannot set n = 0 and have curve_param {curve_param}")
+
+	# Possibly prepare power curve
+	if curve_param != '':
+		if args.param_spacing.lower() == 'linear':
+			curve_vals = np.around(np.linspace(
+				args.param_min, args.param_max, 8
+			), 3)
+		elif args.param_spacing.lower() == 'log':
+			curve_vals = np.around(np.logspace(
+				args.param_min, args.param_max, 8
+			), 3)
+		else:
+			raise ValueError(f"param_spacing must be 'linear' or 'log', not {args.param_spacing}")
+		ns = ns * len(curve_vals)
+	else:
+		# Dummy variables which we won't use
+		curve_vals = [None for _ in ns]
 
 	# Timing
 	time0 = time.time()
 
-	# Generate corr_matrix, Q
+	# Possibly generate singular corr_matrix, Q
 	np.random.seed(seed)
-	_, _, beta, Q, corr_matrix = knockadapt.graphs.sample_data(
-		n = ns[0], p = p, **sample_kwargs
-	)
+	if curve_param == '':
+		_, _, beta, Q, corr_matrix = knockadapt.graphs.sample_data(
+			n = ns[0], p = p, **sample_kwargs
+		)
+	else:
+		beta = None
+		corr_matrix = None
+		Q = None
 	
 	# Initialize all result dataframe
 	all_results = pd.DataFrame()
@@ -221,9 +283,13 @@ def main(args):
 
 	# Loop through ns: no need to parallelize this yet
 	# since each n takes quite a while
-	for n in ns:
+	for n, curve_val in zip(ns, curve_vals):
+
+		if curve_val is not None:
+			sample_kwargs[curve_param] = curve_val
 
 		# Create filename, check that we haven't already done this computation
+		sample_string = get_sample_string(sample_kwargs)
 		fname = f"data/v2/{sample_string}/seed{seed}_p{p}_n{n}"
 		if not os.path.exists(fname):
 			os.makedirs(fname)
@@ -239,7 +305,7 @@ def main(args):
 
 		# Else, it's time to compute!
 		else:
-			sys.stdout.write(f'Running simulation for n = {n}\n')
+			sys.stdout.write(f'Running simulation for n = {n}\n, {curve_param} = {curve_val}')
 
 			# Run method comparison function - note the 
 			# S matrices should be cached 
@@ -249,6 +315,7 @@ def main(args):
 				beta, 
 				Q = Q, 
 				n = n,
+				p = p,
 				q = q, 
 				S_methods = S_methods,
 				feature_fns = {'group_LCD':group_lasso_LCD},
@@ -290,6 +357,10 @@ def main(args):
 		# Aggregate with all other data
 		melted_results['n'] = n
 		oracle_results['n'] = n
+		if curve_val is not None:
+			melted_results[curve_param] = curve_val
+			oracle_results[curve_param] = curve_val
+
 		all_results = pd.concat(
 			[all_results, melted_results], axis = 'index'
 		)
