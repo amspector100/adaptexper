@@ -240,7 +240,7 @@ def main(args):
 	if n != 0:
 		ns = [n]
 	else:
-		if curve_param != '': 
+		if curve_param == '': 
 			ns = [p/4, p/2, p, 2*p, 4*p]
 			ns = [int(n) for n in ns]
 		else:
