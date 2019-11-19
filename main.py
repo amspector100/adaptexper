@@ -150,7 +150,7 @@ def main(args):
 	parser.add_argument('--curve_param', dest = 'curve_param',
 					type=str,
 					help="""Vary this parameter to create a power/fdr curve with
-							8 evenly spaced values on a logarithmic/linear scale.
+							10 evenly spaced values on a logarithmic/linear scale.
 							MUST be a valid argument to pass to sample_kwargs.
 							(default: '', no curve)',
 							""",
@@ -250,11 +250,11 @@ def main(args):
 	if curve_param != '':
 		if args.param_spacing.lower() == 'linear':
 			curve_vals = np.around(np.linspace(
-				args.param_min, args.param_max, 8
+				args.param_min, args.param_max, 10
 			), 3)
 		elif args.param_spacing.lower() == 'log':
 			curve_vals = np.around(np.logspace(
-				args.param_min, args.param_max, 8
+				args.param_min, args.param_max, 10
 			), 3)
 		else:
 			raise ValueError(f"param_spacing must be 'linear' or 'log', not {args.param_spacing}")
@@ -267,8 +267,8 @@ def main(args):
 	time0 = time.time()
 
 	# Possibly generate singular corr_matrix, Q
-	np.random.seed(seed)
 	if curve_param == '':
+		np.random.seed(seed)
 		_, _, beta, Q, corr_matrix = knockadapt.graphs.sample_data(
 			n = ns[0], p = p, **sample_kwargs
 		)
@@ -299,13 +299,13 @@ def main(args):
 
 		# Possibly use cached data
 		if not recompute and os.path.exists(fname_csv) and os.path.exists(fname_oracle_csv):
-			sys.stdout.write(f'Using cached data for n = {n}\n')
+			sys.stdout.write(f'Using cached data for n = {n}, {curve_param} = {curve_val}\n')
 			oracle_results = pd.read_csv(fname_oracle_csv, index_col = 0)
 			melted_results = pd.read_csv(fname_csv, index_col = 0)
 
 		# Else, it's time to compute!
 		else:
-			sys.stdout.write(f'Running simulation for n = {n}\n, {curve_param} = {curve_val}')
+			sys.stdout.write(f'Running simulation for n = {n}, {curve_param} = {curve_val}\n')
 
 			# Run method comparison function - note the 
 			# S matrices should be cached 

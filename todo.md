@@ -282,3 +282,14 @@ start comparing our methods to theirs
 2. Expected: their method will take
 forever, and also, ours will
 perform better for more effects.
+
+# Pre-thanksgiving meeting
+
+To talk about:
+1. Sparsity --> violates FDR control (see sparsity curves)
+2. U shape in coefficient curves (??)
+3. In a5.0_b1.0_coeff10 settings, coeffs are similar for split/double-dipping
+4. Replicated dai barber (sort of)
+
+# Over thanksgiving
+1. Change to make more object oriented

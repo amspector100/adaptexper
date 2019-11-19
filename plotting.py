@@ -100,6 +100,7 @@ def plot_n_curve(path):
 	# Read data
 	results = pd.read_csv(csv_path)
 	results = results.drop('Unnamed: 0', axis = 'columns')
+	print(results.shape, results[curve_param].unique())
 	col_subset = [c for c in results.columns if c != 'sample']
 	#results = results.drop_duplicates(col_subset)
 
@@ -108,7 +109,7 @@ def plot_n_curve(path):
 	if curve_param is not None:
 		if n_vals.shape[0] != 1:
 			raise ValueError(f"Cannot decide whether to plot power curve along n or {curve_param} axis")
-		x_breaks = [np.around(x, 2) for x in results[curve_param].unique()]
+		x_breaks = results[curve_param].unique()
 		x_axis = curve_param
 	else:
 		x_breaks = n_vals
@@ -145,7 +146,7 @@ def plot_n_curve(path):
 			)
 			+ stat_summary(geom = 'line')
 			+ stat_summary(aes(shape = 'split_type'), geom = 'point', size = 2.5)
-			+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_boot')
+			+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_boot', width = 0.01)
 			+ facet_grid('feature_fn~link_method')
 			+ labs(title = new_path)
 			+ scale_x_continuous(breaks = x_breaks)
@@ -167,7 +168,7 @@ def plot_n_curve(path):
 			)
 			+ stat_summary(geom = 'line')
 			+ stat_summary(aes(shape = 'split_type'), geom = 'point', size = 2.5)
-			+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_normal')
+			+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_normal', width = 0.01)
 			+ facet_grid('feature_fn~link_method')
 			+ labs(title = new_path)
 			+ scale_x_continuous(breaks = x_breaks)

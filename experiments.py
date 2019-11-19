@@ -419,11 +419,9 @@ def compare_methods(
     scache_only: If True, only compute the S_group matrices, then stop.
     """
 
-    # Possibly make reproducible, also time
+    # Timing
     if time0 is None:
         time0 = time.time()
-    if seed is not None:
-        np.random.seed(seed)
 
     # Get p, Q, reduction
     if corr_matrix is not None:
@@ -433,10 +431,17 @@ def compare_methods(
     if reduction is None:
         reduction = 10
 
-    # Sample data for the first time, create links
+    # Sample data for the first time, create links. 
+    # We set set the seed here for two reasons:
+    # (1) This X and y are not actually used for anything
+    # (2) In the case where we are generating the corr_matrix,
+    # we want this to be reproducible. 
+    if seed is not None:
+        np.random.seed(seed)
     X, y, beta2, Q2, corr_matrix2 = knockadapt.graphs.sample_data(
        n = n, p = p, corr_matrix = corr_matrix, 
-       Q = Q, beta = beta, **sample_kwargs
+       Q = Q, beta = beta, 
+       **sample_kwargs
     )
 
     # Make sure we aren't changing the DGP 
