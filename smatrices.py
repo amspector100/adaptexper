@@ -4,7 +4,7 @@ import os
 import numpy as np
 
 # Global list of kwargs which aren't important for S generation
-beta_kwargs = ['coeff_size', 'sparsity', 'k']
+beta_kwargs = ['coeff_size', 'sparsity', 'k', 'y_dist']
 
 def construct_S_path(p, seed, cutoff,
 					 link_method, sample_kwargs,

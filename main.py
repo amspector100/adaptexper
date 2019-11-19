@@ -171,6 +171,11 @@ def main(args):
 					help='How to space parameter in power/fdr curve (one of linear/log)',
 					default = 'linear')
 
+	parser.add_argument('--y_dist', dest = 'y_dist',
+					type=str,
+					help='Family to sample y from (gaussian (default) or binomial)',
+					default = 'gaussian')
+
 	args = parser.parse_args()
 	args.pyglmnet = str2bool(args.pyglmnet)
 	sys.stdout.write(f'Parsed args are {args} \n')
@@ -217,6 +222,8 @@ def main(args):
 	else:
 		if curve_param != 'coeff_size':
 			sample_kwargs['coeff_size'] = args.coef
+	if args.y_dist.lower() != 'gaussian':
+		sample_kwargs['y_dist'] = args.y_dist.lower()
 
 	# Initialize save directories
 	all_fname = f"data/v4/"

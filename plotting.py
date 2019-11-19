@@ -100,7 +100,6 @@ def plot_n_curve(path):
 	# Read data
 	results = pd.read_csv(csv_path)
 	results = results.drop('Unnamed: 0', axis = 'columns')
-	print(results.shape, results[curve_param].unique())
 	col_subset = [c for c in results.columns if c != 'sample']
 	#results = results.drop_duplicates(col_subset)
 
@@ -151,6 +150,13 @@ def plot_n_curve(path):
 			+ labs(title = new_path)
 			+ scale_x_continuous(breaks = x_breaks)
 		)
+
+		if meas_type == 'fdr':
+			hline = geom_hline(
+				aes(yintercept = q), linetype="dashed", color = "red"
+			)
+			g2 += hline
+
 		plotnine.options.figure_size = (10, 8)
 		g2.save(new_path)
 
