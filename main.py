@@ -274,16 +274,16 @@ def main(args):
 	time0 = time.time()
 
 	# Possibly generate singular corr_matrix, Q
-	# if curve_param == '':
-	# 	np.random.seed(seed)
-	# 	_, _, beta, Q, corr_matrix = knockadapt.graphs.sample_data(
-	# 		n = ns[0], p = p, **sample_kwargs
-	# 	)
-	# else:
-	beta = None
-	corr_matrix = None
-	Q = None
-	
+	if curve_param == '':
+		np.random.seed(seed)
+		_, _, beta, Q, corr_matrix = knockadapt.graphs.sample_data(
+			n = ns[0], p = p, **sample_kwargs
+		)
+	else:
+		beta = None
+		corr_matrix = None
+		Q = None
+		
 	# Initialize all result dataframe
 	all_results = pd.DataFrame()
 	all_oracle_results = pd.DataFrame()
