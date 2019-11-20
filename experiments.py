@@ -50,6 +50,8 @@ def compute_S_matrix(S_group, link_method, cutoff,
             invSigma = invSigma, return_S = True, **S_kwargs,
             **S_method[1]
         )
+        sys.stdout.write(f'Finished computing S for {link_method} {cutoff}, time is {time.time() - time0}\n')
+
 
         # But save it!
         cache_S_matrix(S_group, 
@@ -534,6 +536,7 @@ def compare_methods(
                                     sample_kwargs)
 
             if S_group is not None:
+                sys.stdout.write(f'S for {link_method} {np.around(cutoff, 3)} is preloaded, time is {time.time() - time0}\n')
                 S_matrixes[link_method][cutoff] = S_group
             else:
                 all_arguments.append(
