@@ -37,7 +37,7 @@ def test_DGP_consistency(
 ### -------------- HELPER FUNCTIONS FOR MULTIPROCESSING -----------------
 
 
-def compute_S_matrix(S_group, link_method, cutoff,
+def compute_S_matrix(S_group, link_method, cutoff, time0,
                     X, corr_matrix, invSigma, groups, 
                     S_kwargs, S_method, p, seed, sample_kwargs):
     """ Helper function for multiprocessing """ 
@@ -152,6 +152,7 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                         corr_matrix = corr_matrix, groups = groups, q = q,
                         non_nulls = beta, S = S, copies = copies, verbose = False,
                         feature_stat_fn = feature_stat_fn, feature_stat_kwargs = feature_stat_kwargs,
+                        #recycle_up_to = recycle_up_to
                     )
 
                     # Add power to recycling split oracle
@@ -540,7 +541,7 @@ def compare_methods(
                 S_matrixes[link_method][cutoff] = S_group
             else:
                 all_arguments.append(
-                    (S_group, link_method, cutoff,
+                    (S_group, link_method, cutoff, time0,
                      X, corr_matrix, Q, groups, 
                      S_kwargs, S_method, p, seed,
                      sample_kwargs)
