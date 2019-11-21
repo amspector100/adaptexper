@@ -413,6 +413,7 @@ def compare_methods(
                     scache_only = False,
                     num_processes = 8,
                     compute_split_oracles = True,
+                    noSDP = False,
                     ):
     """ 
     S_methods arg optionally allows you to add extra kwargs (e.g. ASDP instead of SDP)
@@ -420,6 +421,7 @@ def compare_methods(
     [(methodname, method_kwargs)], and it should be the same length as 
     link_methods.
     scache_only: If True, only compute the S_group matrices, then stop.
+    noSDP: If True, don't compute any SDP formulations.
     """
 
     # Timing
@@ -522,7 +524,7 @@ def compare_methods(
 
         # Retrive groups/cutoffs for this link method
         link_method_groups = all_groups[link_method]
-        cutoffs = all_cutoffs[link_method]
+        cutoffs = all_cutoffs[link_method].copy()
 
         # Progress report
         sys.stdout.write(f'Generating/retreiving S matrices for {link_method} now, time is {time.time() - time0}\n')
@@ -540,6 +542,40 @@ def compare_methods(
                 sys.stdout.write(f'S for {link_method} {np.around(cutoff, 3)} is preloaded, time is {time.time() - time0}\n')
                 S_matrixes[link_method][cutoff] = S_group
             else:
+
+
+                # If noSDP, don't bother to compute, 
+                # just get rid of the particular cutoff
+                if noSDP:
+
+                    # Only remove SDP operations (expensive)
+                    if S_method[0] == 'SDP':
+                        remove_flag = True
+                    else:
+                        remove_flag = False
+
+                    # Then remove
+                    if remove_flag:
+                        # Delete cutoff from cutoffs, start by
+                        # making report
+                        time1 = time.time() - time0
+                        sys.stdout.write(f'Cutoff {np.around(cutoff, 3)} for {link_method} is being removed since noSDP = True, time is {time1}\n')
+                        
+                        # Now actually delete
+                        which_to_delete = np.where(all_cutoffs[link_method] == cutoff)
+                        all_cutoffs[link_method] = np.delete(
+                            arr = all_cutoffs[link_method], 
+                            obj = which_to_delete,
+                            axis = 0
+                        )
+
+                        # And don't add arguments
+                        continue
+
+
+
+
+
                 all_arguments.append(
                     (S_group, link_method, cutoff, time0,
                      X, corr_matrix, Q, groups, 

@@ -176,8 +176,14 @@ def main(args):
 					help='Family to sample y from (gaussian (default) or binomial)',
 					default = 'gaussian')
 
+	parser.add_argument('--noSDP', dest = 'noSDP',
+					type=str,
+					help='If true, do not try to solve any SDP equations problems (defalt: False)',
+					default = 'False')
+
 	args = parser.parse_args()
 	args.pyglmnet = str2bool(args.pyglmnet)
+	args.noSDP = str2bool(args.noSDP)
 	sys.stdout.write(f'Parsed args are {args} \n')
 
 	# Retreive values
@@ -336,7 +342,8 @@ def main(args):
 				scache_only = scache,
 				num_processes = num_processes,
 				compute_split_oracles = splitoracles,
-				reduction = reduction
+				reduction = reduction,
+				noSDP = args.noSDP
 			)
 			# Possibly exit if we only need to compute S matrices
 			if scache:

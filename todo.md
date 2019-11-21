@@ -291,5 +291,9 @@ To talk about:
 3. In a5.0_b1.0_coeff10 settings, coeffs are similar for split/double-dipping
 4. Replicated dai barber (sort of)
 
+To investigate:
+1. How on earth does sample-splitting get higher power in dai barber?
+This must be a bug... unless something very strange is going on with sample splitting
+
 # Over thanksgiving
 1. Change to make more object oriented
