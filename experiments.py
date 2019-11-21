@@ -357,7 +357,6 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
             )
 
             # Pick our best grouping/expected power
-            expected_empirical_power = max(spl_hat_powers)
             selected_cutoff = link_cutoffs[np.argmax(np.array(spl_hat_powers))]
             selected_grouping = link_groups[selected_cutoff]
             spl_num_groups = np.unique(selected_grouping).shape[0]
@@ -365,8 +364,9 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
             # Now test to see what discoveries we find
             # This involves knockoff recycling 
             spl_fdps, spl_powers, spl_hat_powers = knockadapt.adaptive.evaluate_grouping(
-                X = X, y = y, corr_matrix = corr_matrix, groups = groups, q = q, 
-                non_nulls = beta, S = S, copies = copies, verbose = False,
+                X = X, y = y, corr_matrix = corr_matrix, 
+                groups = selected_grouping,
+                q = q, non_nulls = beta, S = S, copies = copies, verbose = False,
                 recycle_up_to = int(n/2),
                 feature_stat_fn = feature_stat_fn,
                 feature_stat_kwargs = feature_stat_kwargs,
