@@ -163,27 +163,33 @@ def main(args):
 
 	parser.add_argument('--param_max', dest = 'param_max',
 					type=float,
-					help='Maximum value of parameter in power/fdr curve (default: 1)',
-					default = 1)
+					help='Maximum value of parameter in power/fdr curve (default: 0.5)',
+					default = 0.5)
 
 	parser.add_argument('--param_spacing', dest = 'param_spacing',
 					type=str,
 					help='How to space parameter in power/fdr curve (one of linear/log)',
 					default = 'linear')
 
+	parser.add_argument('--num_param_values', dest = 'num_param_values',
+					type=int,
+					help='Number of parameter values to test (default: 10)',
+					default = 10)
+
+
 	parser.add_argument('--y_dist', dest = 'y_dist',
 					type=str,
 					help='Family to sample y from (gaussian (default) or binomial)',
 					default = 'gaussian')
 
-	parser.add_argument('--noSDP', dest = 'noSDP',
+	parser.add_argument('--noSDPcalc', dest = 'noSDPcalc',
 					type=str,
 					help='If true, do not try to solve any SDP equations problems (defalt: False)',
 					default = 'False')
 
 	args = parser.parse_args()
 	args.pyglmnet = str2bool(args.pyglmnet)
-	args.noSDP = str2bool(args.noSDP)
+	args.noSDPcalc = str2bool(args.noSDPcalc)
 	sys.stdout.write(f'Parsed args are {args} \n')
 
 	# Retreive values
@@ -263,11 +269,11 @@ def main(args):
 	if curve_param != '':
 		if args.param_spacing.lower() == 'linear':
 			curve_vals = np.around(np.linspace(
-				args.param_min, args.param_max, 10
+				args.param_min, args.param_max, args.num_param_values
 			), 3)
 		elif args.param_spacing.lower() == 'log':
 			curve_vals = np.around(np.logspace(
-				args.param_min, args.param_max, 10
+				args.param_min, args.param_max, args.num_param_values
 			), 3)
 		else:
 			raise ValueError(f"param_spacing must be 'linear' or 'log', not {args.param_spacing}")
@@ -343,7 +349,7 @@ def main(args):
 				num_processes = num_processes,
 				compute_split_oracles = splitoracles,
 				reduction = reduction,
-				noSDP = args.noSDP
+				noSDPcalc = args.noSDPcalc
 			)
 			# Possibly exit if we only need to compute S matrices
 			if scache:
