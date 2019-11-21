@@ -413,7 +413,7 @@ def compare_methods(
                     scache_only = False,
                     num_processes = 8,
                     compute_split_oracles = True,
-                    noSDP = False,
+                    noSDPcalc = False,
                     ):
     """ 
     S_methods arg optionally allows you to add extra kwargs (e.g. ASDP instead of SDP)
@@ -546,7 +546,7 @@ def compare_methods(
 
                 # If noSDP, don't bother to compute, 
                 # just get rid of the particular cutoff
-                if noSDP:
+                if noSDPcalc:
 
                     # Only remove SDP operations (expensive)
                     if S_method[0] == 'SDP':
@@ -559,7 +559,7 @@ def compare_methods(
                         # Delete cutoff from cutoffs, start by
                         # making report
                         time1 = time.time() - time0
-                        sys.stdout.write(f'Cutoff {np.around(cutoff, 3)} for {link_method} is being removed since noSDP = True, time is {time1}\n')
+                        sys.stdout.write(f'Cutoff {np.around(cutoff, 3)} for {link_method} is being removed since noSDPcalc = True, time is {time1}\n')
                         
                         # Now actually delete
                         which_to_delete = np.where(all_cutoffs[link_method] == cutoff)
@@ -572,10 +572,8 @@ def compare_methods(
                         # And don't add arguments
                         continue
 
-
-
-
-
+                # If it hasn't been removed, add this to
+                # list of arguments to pass to pool
                 all_arguments.append(
                     (S_group, link_method, cutoff, time0,
                      X, corr_matrix, Q, groups, 
