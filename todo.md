@@ -285,15 +285,27 @@ perform better for more effects.
 
 # Pre-thanksgiving meeting
 
-To talk about:
-1. Sparsity --> violates FDR control (see sparsity curves)
-2. U shape in coefficient curves (??)
-3. In a5.0_b1.0_coeff10 settings, coeffs are similar for split/double-dipping
-4. Replicated dai barber (sort of)
+To talk about: see folder
 
-To investigate:
-1. How on earth does sample-splitting get higher power in dai barber?
-This must be a bug... unless something very strange is going on with sample splitting
+Other papers:
+1. https://arxiv.org/pdf/1503.00334.pdf (2015 Reid/Tibirshani paper)
+2. http://users.cms.caltech.edu/~hou/papers/Prototype-knockoff-2019.pdf (Hou from harvard stat dept)
+
+Then on diff privacy:
+(1) Method is definitely applicable: we may have to replace 'diff privacy' with martingale analysis
+(bc what is diff privacy for n = 1? although we could try for n = 1?)
+Or is there a smart way to do this?
+(2) What are we trying to estmate?
+
+3. SUMMER STUFF - you'll regret it if you don't ask about this
+
 
 # Over thanksgiving
 1. Change to make more object oriented
+2. Implement some competitor methods
+
+
+Try eoracle: see what happens when you pick max empirical power
+
+# To discuss:
+1. 
