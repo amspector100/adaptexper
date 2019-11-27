@@ -20,7 +20,7 @@ FINAL_COLUMNS = ['link_method', 'feature_fn', 'sample', 'cutoff',
                 'split_type']
 
 ORACLE_COLUMNS = ['sample', 'cutoff', 'feature_fn', 'link_method',
-                  'power', 'fdp', 'oracle_type']
+                  'epower', 'power', 'fdp', 'oracle_type']
 
 ### Helper function for consistency
 
@@ -120,7 +120,8 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 to_add = pd.DataFrame(
                     columns = ORACLE_COLUMNS,
                     data = [[j, cutoff, feature_method, link_method, 
-                            powers.mean(), fdps.mean(), 'oracle']]
+                            hat_powers.mean(), powers.mean(), 
+                            fdps.mean(), 'oracle']]
                 )
                 outputs_to_add.append(to_add)
 
@@ -140,7 +141,8 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                     half_to_add = pd.DataFrame(
                         columns = ORACLE_COLUMNS,
                         data = [[j, cutoff, feature_method, link_method, 
-                                 half_powers.mean(), half_fdps.mean(), 'split_oracle']]
+                                 half_hat_powers.mean(), half_powers.mean(), 
+                                 half_fdps.mean(), 'split_oracle']]
                     )
 
                     outputs_to_add.append(half_to_add)
