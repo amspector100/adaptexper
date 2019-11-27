@@ -19,7 +19,8 @@ FINAL_COLUMNS = ['link_method', 'feature_fn', 'sample', 'cutoff',
                 'num_groups', 'variable', 'value', 'measurement',
                 'split_type']
 
-ORACLE_COLUMNS = ['sample', 'cutoff', 'feature_fn', 'link_method',
+ORACLE_COLUMNS = ['sample', 'cutoff', 'num_groups', 
+                 'feature_fn', 'link_method',
                   'epower', 'power', 'fdp', 'oracle_type']
 
 ### Helper function for consistency
@@ -107,6 +108,7 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
 
                 # Get the group and S matrix
                 groups = all_groups[link_method][cutoff]
+                num_groups = np.unique(groups).shape[0]
                 S = S_matrixes[link_method][cutoff]
 
                 # Oracle for full data
@@ -119,7 +121,8 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 # Add power to regular oracle
                 to_add = pd.DataFrame(
                     columns = ORACLE_COLUMNS,
-                    data = [[j, cutoff, feature_method, link_method, 
+                    data = [[j, cutoff, num_groups,
+                            feature_method, link_method, 
                             hat_powers.mean(), powers.mean(), 
                             fdps.mean(), 'oracle']]
                 )
@@ -140,7 +143,8 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                     # Add to outputs
                     half_to_add = pd.DataFrame(
                         columns = ORACLE_COLUMNS,
-                        data = [[j, cutoff, feature_method, link_method, 
+                        data = [[j, cutoff, num_groups,
+                                 feature_method, link_method, 
                                  half_hat_powers.mean(), half_powers.mean(), 
                                  half_fdps.mean(), 'split_oracle']]
                     )
@@ -416,6 +420,7 @@ def compare_methods(
                     num_processes = 8,
                     compute_split_oracles = True,
                     noSDPcalc = False,
+                    onlyoracles = False
                     ):
     """ 
     S_methods arg optionally allows you to add extra kwargs (e.g. ASDP instead of SDP)
@@ -653,6 +658,10 @@ def compare_methods(
         all_oracle_cutoffs[oracle_type] = oracle_cutoffs
 
     sys.stdout.write(f'Finished creating oracles: comparing methods, time is {time.time() - time0}\n')
+
+    if onlyoracles:
+        sys.stdout.write(f'Returning early because onlyoracles is true (not doing more computation)\n')
+        return None, oracle_results, S_matrixes
 
     # Initialize output to actually compare methods
     output_df = pd.DataFrame(columns = FINAL_COLUMNS)

@@ -187,9 +187,16 @@ def main(args):
 					help='If true, do not try to solve any SDP equations problems (defalt: False)',
 					default = 'False')
 
+	parser.add_argument('--onlyoracles', dest = 'onlyoracles',
+					type=str,
+					help='If true, only calculate oracle values and such (default: False)',
+					default = 'False')
+
+	# Parse args, including some boolean flags
 	args = parser.parse_args()
 	args.pyglmnet = str2bool(args.pyglmnet)
 	args.noSDPcalc = str2bool(args.noSDPcalc)
+	args.onlyoracles = str2bool(args.onlyoracles)
 	sys.stdout.write(f'Parsed args are {args} \n')
 
 	# Retreive values
@@ -349,7 +356,8 @@ def main(args):
 				num_processes = num_processes,
 				compute_split_oracles = splitoracles,
 				reduction = reduction,
-				noSDPcalc = args.noSDPcalc
+				noSDPcalc = args.noSDPcalc,
+				onlyoracles = args.onlyoracles
 			)
 			# Possibly exit if we only need to compute S matrices
 			if scache:
@@ -357,7 +365,13 @@ def main(args):
 
 			# Unpack and cache
 			melted_results, oracle_results, _ = output
-			melted_results.to_csv(fname_csv)
+
+			# The first output may be none if we only computed oracle
+			# results
+			if not args.onlyoracles:
+				melted_results.to_csv(fname_csv)
+
+			# Save oracle results (most imp)
 			oracle_results.to_csv(fname_oracle_csv)
 			
 			# Possibly plot, usually not though - delete this later
@@ -374,22 +388,30 @@ def main(args):
 										yintercept = q,
 										fname = fname)     
 
-		# Aggregate with all other data
-		melted_results['n'] = n
+		# Aggregate with all other data,
+		# start with non-oracle data
+		if not args.onlyoracles:
+			melted_results['n'] = n
+			if curve_val is not None:
+				melted_results[curve_param] = curve_val
+			all_results = pd.concat(
+				[all_results, melted_results], axis = 'index'
+			)
+			all_results.to_csv(all_fname_csv)
+		else:
+			all_results = None
+
+
+		# Then add oracle data
 		oracle_results['n'] = n
 		if curve_val is not None:
-			melted_results[curve_param] = curve_val
 			oracle_results[curve_param] = curve_val
 
-		all_results = pd.concat(
-			[all_results, melted_results], axis = 'index'
-		)
 		all_oracle_results = pd.concat(
 			[all_oracle_results, oracle_results], axis = 'index'
 		)
 
 		# Save
-		all_results.to_csv(all_fname_csv)
 		all_oracle_results.to_csv(all_fname_oracle_csv)
 
 	return all_results, all_oracle_results
