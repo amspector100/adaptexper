@@ -114,7 +114,6 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
 
             # Run knockoffs for each cutoff
             for cutoff in all_cutoffs[link_method]:
-                print(f"Sample {j} at cutoff {cutoff}")
 
                 # Get the group and S matrix
                 groups = all_groups[link_method][cutoff]
