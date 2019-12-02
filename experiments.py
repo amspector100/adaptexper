@@ -295,7 +295,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                     X = X_to_use, y = y_to_use, 
                     groups = groups, 
                     recycle_up_to = recycle_up_to,
-                    S = S, 
+                    S = S, copies = copies,
                 )
                 oracle_fdr = o_fdps.mean()
                 oracle_power = o_powers.mean()
@@ -384,7 +384,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
             # Pick our best grouping/expected power
             actual_selection = np.argmax(np.array(spl_hat_powers))
             selected_cutoff = link_cutoffs[actual_selection]
-            selected_grouping = link_groups[actual_selection]
+            selected_grouping = link_groups[selected_cutoff]
             spl_num_groups = np.unique(selected_grouping).shape[0]
 
             # Now test to see what discoveries we find
@@ -392,7 +392,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
             S = S_matrixes[link_method][selected_cutoff]
             spl_fdps, spl_powers, spl_hat_powers = gkval.eval_grouping(
                 X = X, y = y, groups = selected_grouping, 
-                recycle_up_to = int(n/2), S = S, 
+                recycle_up_to = int(n/2), S = S, copies = copies
             )
             actual_fdr = spl_fdps.mean()
             actual_power = spl_powers.mean()
