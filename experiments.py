@@ -114,6 +114,7 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
 
             # Run knockoffs for each cutoff
             for cutoff in all_cutoffs[link_method]:
+                print(f"Sample {j} at cutoff {cutoff}")
 
                 # Get the group and S matrix
                 groups = all_groups[link_method][cutoff]
@@ -161,8 +162,10 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                     # Recycling oracle is the same
                     rec_to_add = pd.DataFrame(
                         columns = ORACLE_COLUMNS,
-                        data = [[j, cutoff, feature_method, link_method, 
-                                 half_powers.mean(), half_fdps.mean(), 'rec_oracle']]
+                        data = [[j, cutoff,  num_groups,
+                                feature_method, link_method, 
+                                half_hat_powers.mean(), half_powers.mean(),
+                                half_fdps.mean(), 'rec_oracle']]
                     )
 
                     outputs_to_add.append(rec_to_add)
