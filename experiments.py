@@ -324,6 +324,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 cutoffs = link_cutoffs,
                 reduction = reduction,
                 S_matrices = link_S_matrices,
+                copies = copies
             )
 
             def add_select_cutoff_to_final_df(index, 
@@ -336,7 +337,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 cutoff = link_cutoffs[index]
                 num_groups = np.unique(link_groups[cutoff]).shape[0]
                 power = powers[index]
-                epowers = epowers[index]
+                epower = epowers[index]
                 fdp = fdps[index]
 
                 output_list = to_add_to_final_df(
@@ -351,8 +352,8 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 index = nonsplit_selection,
                 powers = ns_powers,
                 epowers = ns_hat_powers,
-                fdps = nonsplit_fdps,
-                sample = sample,
+                fdps = ns_fdps,
+                sample = j,
                 split_type = 'nonsplit'
             )
             final_output.append(to_add)
@@ -364,8 +365,8 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 index = 0,
                 powers = ns_powers,
                 epowers = ns_hat_powers,
-                fdps = nonsplit_fdps,
-                sample = sample,
+                fdps = ns_fdps,
+                sample = j,
                 split_type = 'baseline'
             )
             final_output.append(to_add)
@@ -377,6 +378,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 X = trainX, y = trainy, link = link,
                 cutoffs = link_cutoffs, reduction = reduction,
                 S_matrices = link_S_matrices,
+                copies = copies
             )
 
             # Pick our best grouping/expected power
@@ -387,6 +389,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
 
             # Now test to see what discoveries we find
             # This involves knockoff recycling 
+            S = S_matrixes[link_method][selected_cutoff]
             spl_fdps, spl_powers, spl_hat_powers = gkval.eval_grouping(
                 X = X, y = y, groups = selected_grouping, 
                 recycle_up_to = int(n/2), S = S, 

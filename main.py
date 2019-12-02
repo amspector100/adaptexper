@@ -85,7 +85,7 @@ def main(args):
 	parser.add_argument('--nosdp', dest = 'nosdp',
 						type=str, 
 						help='If true, do NOT use full semidefinite programming (default: False)',
-						default = False)
+						default = 'False')
 
 	parser.add_argument('--asdp', dest = 'asdp',
 						type=str, 
@@ -189,6 +189,7 @@ def main(args):
 
 	args = parser.parse_args()
 	args.pyglmnet = str2bool(args.pyglmnet)
+	args.nosdp = str2bool(args.nosdp)
 	args.noSDPcalc = str2bool(args.noSDPcalc)
 	sys.stdout.write(f'Parsed args are {args} \n')
 
@@ -208,7 +209,7 @@ def main(args):
 	curve_param = args.curve_param.lower()
 
 	# Generate S methods
-	S_kwargs = {'objective':'norm', 
+	S_kwargs = {'objective':'pnorm', 
 				'norm_type':2, 
 				'verbose':True, 
 				'sdp_verbose':False}
