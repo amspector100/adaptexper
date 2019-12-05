@@ -112,6 +112,11 @@ def main(args):
 						help='gamma parameter when sampling daibarber2016 graphs (default: 0)',
 						default = 0)
 
+	parser.add_argument('--rho', dest = 'rho',
+						type=float,
+						help='rho parameter when sampling daibarber2016 graphs (default: 0.5)',
+						default = 0.5)
+
 	parser.add_argument('--coef', dest = 'coef',
 						type=float,
 						help='Size of true coefficients relative to noise level (default: 10)',
@@ -245,6 +250,8 @@ def main(args):
 	if args.covmethod.lower() == 'daibarber2016':
 		if curve_param != 'gamma':
 			sample_kwargs['gamma'] = args.gamma
+		if curve_param != 'rho':
+			sample_kwargs['rho'] = args.rho
 	else:
 		if curve_param != 'coeff_size':
 			sample_kwargs['coeff_size'] = args.coef
