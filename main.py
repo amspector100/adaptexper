@@ -192,6 +192,12 @@ def main(args):
 					help='If true, only calculate oracle values and such (default: False)',
 					default = 'False')
 
+	parser.add_argument('--objective', dest = 'objective',
+					type=str,
+					help='SDP solver objective (default: pnorm). If "many," will try different objectives',
+					default = 'pnorm')
+
+
 	# Parse args, including some boolean flags
 	args = parser.parse_args()
 	args.pyglmnet = str2bool(args.pyglmnet)
@@ -216,7 +222,7 @@ def main(args):
 	curve_param = args.curve_param.lower()
 
 	# Generate S methods
-	S_kwargs = {'objective':'pnorm', 
+	S_kwargs = {'objective':args.objective, 
 				'norm_type':2, 
 				'verbose':True, 
 				'sdp_verbose':False}

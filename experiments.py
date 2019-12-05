@@ -143,7 +143,7 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                     # Oracle for half data 
                     half_fdps, half_powers, half_hat_powers = gkval.eval_grouping(
                         X = X[0:int(n/2)], y = y[0:int(n/2)], 
-                        groups = groups, q = q,
+                        groups = groups,
                         S = S, copies = copies
                     )
 
@@ -158,34 +158,25 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
 
                     outputs_to_add.append(half_to_add)
 
+                    # Oracle for recycled data
+                    rec_fdps, rec_powers, rec_hat_powers = gkval.eval_grouping(
+                        X = X, y = y, 
+                        groups = groups,
+                        recycle_up_to = int(n/2),
+                        S = S, copies = copies
+                    )
+
                     # Recycling oracle is the same
                     rec_to_add = pd.DataFrame(
                         columns = ORACLE_COLUMNS,
                         data = [[j, cutoff,  num_groups,
                                 feature_method, link_method, 
-                                half_hat_powers.mean(), half_powers.mean(),
-                                half_fdps.mean(), 'rec_oracle']]
+                                rec_hat_powers.mean(), rec_powers.mean(),
+                                rec_fdps.mean(), 'rec_oracle']]
                     )
 
                     outputs_to_add.append(rec_to_add)
 
-
-                    # Pretty sure this is identical to previous one lol
-                    # # Oracle for half data which DOES use sample recycling
-                    # rec_fdps, rec_powers, rec_hat_powers = knockadapt.adaptive.evaluate_grouping(
-                    #     X = X[0:int(n/2)], y = y[0:int(n/2)], 
-                    #     corr_matrix = corr_matrix, groups = groups, q = q,
-                    #     non_nulls = beta, S = S, copies = copies, verbose = False,
-                    #     feature_stat_fn = feature_stat_fn, feature_stat_kwargs = feature_stat_kwargs,
-                    #     #recycle_up_to = recycle_up_to
-                    # )
-
-                    # # Add power to recycling split oracle
-                    # rec_to_add = pd.DataFrame(
-                    #     columns = ORACLE_COLUMNS,
-                    #     data = [[j, cutoff, feature_method, link_method, 
-                    #             rec_powers.mean(), rec_fdps.mean(), 'rec_oracle']]
-                    # )
 
 
     return outputs_to_add
