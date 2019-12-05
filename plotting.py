@@ -100,6 +100,11 @@ def plot_n_curve(path):
 	# Read data
 	results = pd.read_csv(csv_path)
 	results = results.drop('Unnamed: 0', axis = 'columns')
+	
+	# Oracle data
+	oracle_path = path + '_oracle.csv'
+	oracle_results = pd.read_csv(oracle_path)
+	oracle_results = oracle_results.drop('Unnamed: 0', axis = 'columns')
 	col_subset = [c for c in results.columns if c != 'sample']
 	#results = results.drop_duplicates(col_subset)
 
@@ -182,6 +187,32 @@ def plot_n_curve(path):
 		plotnine.options.figure_size = (10, 8)
 		g2.save(new_path)
 
+	# Plot oracle powers/fdps by cutoffs
+	print(oracle_results)
+	print("Plotting oracle data")
+	for col in ['cutoff']:
+		for meas_type in ['power', 'epower', 'fdp', 'num_groups']:
+
+			new_path = path + f'/all_{col}_' + meas_type + '.SVG'
+			dirname = os.path.dirname(new_path)
+			if not os.path.exists(dirname):
+				os.makedirs(dirname)
+
+			# Make plotting pretty
+			oracle_results[x_axis] = np.around(oracle_results[x_axis], 3)
+			oracle_results[col] = np.around(oracle_results[col], 3)
+
+			g2 = (
+				ggplot(oracle_results, aes(
+					x = col, y = meas_type, color = x_axis, fill = x_axis,
+				))
+				+ stat_summary(geom = 'point', size = 2.5)
+				+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_normal', width = 0.01)
+				+ facet_grid(f'oracle_type~{x_axis}')
+				+ labs(title = new_path)
+			)
+
+			g2.save(new_path)
 	# Plot for individual n for each n
 	for n in n_vals:
 
@@ -194,8 +225,11 @@ def plot_n_curve(path):
 		new_path = ''.join([split_new_path[0], f'_n{n}_p', split_new_path[1]])
 		new_path = new_path + '.csv'
 
-		# Plot
-		plot_csv(new_path)
+		# Plot if existant
+		if not os.path.exists(new_path):
+			pass
+		else:
+			plot_csv(new_path)
 
 	warnings.simplefilter("always")
 
