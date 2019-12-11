@@ -21,7 +21,7 @@ except ImportError:
 	sys.stdout.write(f'Knockoff dir is {knockoff_directory}\n')
 	sys.path.insert(0, os.path.abspath(knockoff_directory))
 	import knockadapt
-	from knockadapt.knockoff_stats import group_lasso_LCD
+	from knockadapt import knockoff_stats
 		
 import experiments
 
@@ -202,6 +202,22 @@ def main(args):
 					help='SDP solver objective (default: pnorm). If "many," will try different objectives',
 					default = 'pnorm')
 
+	parser.add_argument('--margcorr', dest = 'margcorr',
+					type=str,
+					help='If true, also use marginal correlations as a feature statistic (default: False)',
+					default = 'False')
+
+	parser.add_argument('--linreg', dest = 'linreg',
+					type=str,
+					help='If true, also use vanilla linear regression as a feature statistic (default: False)',
+					default = 'False')
+
+	parser.add_argument('--nolasso', dest = 'nolasso',
+					type=str,
+					help='If true, do not compute group lasso feature statistic (default: False)',
+					default = 'False')
+
+
 
 	# Parse args, including some boolean flags
 	args = parser.parse_args()
@@ -209,6 +225,10 @@ def main(args):
 	args.nosdp = str2bool(args.nosdp)
 	args.noSDPcalc = str2bool(args.noSDPcalc)
 	args.onlyoracles = str2bool(args.onlyoracles)
+	args.margcorr = str2bool(args.margcorr)
+	args.linreg = str2bool(args.linreg)
+	args.nolasso = str2bool(args.nolasso)
+
 	sys.stdout.write(f'Parsed args are {args} \n')
 
 	# Retreive values
@@ -240,6 +260,19 @@ def main(args):
 		S_methods.append(('ASDP_auto', {'method':'ASDP'}))
 	else:
 		pass
+	
+	# Feature functions
+	feature_fns = {}
+	feature_fn_kwargs = {}
+	if not args.nolasso:
+		feature_fns['group_LCD'] = knockoff_stats.group_lasso_LCD
+		feature_fn_kwargs['group_LCD'] = {'use_pyglm':use_pyglm}
+	if args.margcorr:
+		feature_fns['margcorr']  = knockoff_stats.marg_corr_diff
+		feature_fn_kwargs['margcorr'] = {}
+	if args.linreg:
+		feature_fns['OLS']  = knockoff_stats.linear_coef_diff
+		feature_fn_kwargs['OLS'] = {}
 
 	# Sample Kwargs
 	sample_kwargs = {}
@@ -358,8 +391,8 @@ def main(args):
 				p = p,
 				q = q, 
 				S_methods = S_methods,
-				feature_fns = {'group_LCD':group_lasso_LCD},
-				feature_fn_kwargs = {'group_LCD':{'use_pyglm':use_pyglm}},
+				feature_fns = feature_fns,
+				feature_fn_kwargs = feature_fn_kwargs,
 				link_methods = link_methods,
 				S_kwargs = S_kwargs,
 				num_data_samples = num_datasets,
@@ -436,11 +469,11 @@ if __name__ == '__main__':
 
 		# Profile
 		import cProfile
-		cProfile.run('main(sys.argv)', 'profile')
+		cProfile.run('main(sys.argv)', '.profile')
 
 		# Analyze
 		import pstats
-		p = pstats.Stats('profile')
+		p = pstats.Stats('.profile')
 		p.strip_dirs().sort_stats('cumulative').print_stats(50)
 		
 	else:

@@ -366,7 +366,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 epowers = ns_hat_powers,
                 fdps = ns_fdps,
                 sample = j,
-                split_type = 'baseline'
+                split_type = 'ungrouped'
             )
             final_output.append(to_add)
             
@@ -405,7 +405,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 num_groups = spl_num_groups,
                 link_method = link_method,
                 feature_fn = feature_method,
-                sample = j, split_type = 'actual'
+                sample = j, split_type = 'split-sample'
             )
             final_output.append(to_add)
 
