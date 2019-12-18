@@ -151,7 +151,7 @@ def plot_n_curve(path):
 			+ stat_summary(geom = 'line')
 			+ stat_summary(aes(shape = 'split_type'), geom = 'point', size = 2.5)
 			+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_boot', width = 0.01)
-			+ facet_grid('feature_fn~link_method')
+			+ facet_grid('feature_fn~link_method', scales = 'free')
 			+ labs(title = new_path)
 			+ scale_x_continuous(breaks = x_breaks)
 		)
@@ -188,31 +188,34 @@ def plot_n_curve(path):
 		g2.save(new_path)
 
 	# Plot oracle powers/fdps by cutoffs
-	print(oracle_results)
 	print("Plotting oracle data")
-	for col in ['cutoff']:
-		for meas_type in ['power', 'epower', 'fdp', 'num_groups']:
+	feature_fns = oracle_results['feature_fn'].unique()
 
-			new_path = path + f'/all_{col}_' + meas_type + '.SVG'
-			dirname = os.path.dirname(new_path)
-			if not os.path.exists(dirname):
-				os.makedirs(dirname)
+	for feature_fn in feature_fns:
+		subset = oracle_results.loc[oracle_results['feature_fn'] == feature_fn]
+		for col in ['cutoff']:
+			for meas_type in ['power', 'epower', 'fdp', 'num_groups']:
 
-			# Make plotting pretty
-			oracle_results[x_axis] = np.around(oracle_results[x_axis], 3)
-			oracle_results[col] = np.around(oracle_results[col], 3)
+				new_path = path + f'/all_{col}_' + meas_type + '_' + feature_fn + '.SVG'
+				dirname = os.path.dirname(new_path)
+				if not os.path.exists(dirname):
+					os.makedirs(dirname)
 
-			g2 = (
-				ggplot(oracle_results, aes(
-					x = col, y = meas_type, color = x_axis, fill = x_axis,
-				))
-				+ stat_summary(geom = 'point', size = 2.5)
-				+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_normal', width = 0.01)
-				+ facet_grid(f'oracle_type~{x_axis}')
-				+ labs(title = new_path)
-			)
+				# Make plotting pretty
+				subset[x_axis] = np.around(subset[x_axis], 3)
+				subset[col] = np.around(subset[col], 3)
 
-			g2.save(new_path)
+				g2 = (
+					ggplot(oracle_results, aes(
+						x = col, y = meas_type, color = x_axis, fill = x_axis,
+					))
+					+ stat_summary(geom = 'point', size = 2.5)
+					+ stat_summary(geom = "errorbar", fun_data = 'mean_cl_normal', width = 0.01)
+					+ facet_grid(f'oracle_type~{x_axis}')
+					+ labs(title = new_path)
+				)
+
+				g2.save(new_path)
 	# Plot for individual n for each n
 	for n in n_vals:
 

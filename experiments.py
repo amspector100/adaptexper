@@ -369,6 +369,23 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 split_type = 'ungrouped'
             )
             final_output.append(to_add)
+
+            # Add the oracle of course
+            oracle_cutoff = all_oracle_cutoffs['oracle'].loc[feature_method, link_method]
+            oracle_selection = (link_cutoffs == oracle_cutoff).nonzero()[0][0]
+            if link_cutoffs[oracle_selection] != oracle_cutoff:
+                raise ValueError("Incorrectly retrieved oracle cutoff")
+            to_add = add_select_cutoff_to_final_df(
+                index = oracle_selection,
+                powers = ns_powers,
+                epowers = ns_hat_powers,
+                fdps = ns_fdps,
+                sample = j,
+                split_type = 'oracle'
+            )
+            final_output.append(to_add)
+
+
             
             # Repeat but for sample-splitting method ----------
 
