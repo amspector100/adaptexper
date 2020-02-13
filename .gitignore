@@ -4,6 +4,7 @@ run.sh
 transfer.sh
 
 # Don't save data
+transfer/*
 data/*
 figures/*
 *.ipynb
