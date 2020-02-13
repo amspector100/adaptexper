@@ -309,3 +309,60 @@ Try eoracle: see what happens when you pick max empirical power
 
 # To discuss:
 1. 
+
+# Notes from Alec's Presentation
+
+1. Maintainability > performance
+You can always spend time optimizing later
+
+2. Only fix bottlenecks afer you find them
+
+3. Always use Pylint
+
+4. Functions should be used when you want to abstract repeated functionality
+
+5. Classes should be employed to combine related functions with relevant state information and data
+
+6. When to commit code and how often. Better to do it on the smaller end of things.
+Make like 50 lines of code, that's worth committing. 
+
+
+
+## Unit tests
+0. Build failsafes in the actual code (asserts, value errors, etc)
+so that things faily quickly!
+
+1. Write tests prior to writing the actual code
+
+2. Testing randomly is good bc it may tests cases you weren't
+expecting
+
+3. Test oracle (inverse function): figure out what your function
+is supposed to return given a particular set of inputs
+
+4. How to test random functions - have a random component 
+"swapped out" or "mocked up," which has the same functionality
+and inputs/outputs but a more naive/simple version. Remove
+the randomness from your function upon request.
+
+## Memory Tracking
+
+1. If you want to track memory, maybe use Guppy or Memory Profiler
+
+# More bug hunting
+
+1. Try rewriting the experiment base 
+2. Replace any row of the knockoffs with an exact copy of X
+3. Share knockoffs
+4. Hope they're aren't weird, pathological edge cases where lasso
+totally breaks for a fairly reasonable knockoff generation mechanism
+
+# To do
+
+1. Bug hunt for LASSO
+2. Complete the proof
+3. Martingales
+4. Counting arguments
+
+On 1: Differences between msesia's code and mine:
+(a) applying his feature fn to my knockoffs --> more power/rejections

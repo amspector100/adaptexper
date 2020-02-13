@@ -120,19 +120,28 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                 num_groups = np.unique(groups).shape[0]
                 S = S_matrixes[link_method][cutoff]
 
+                # Fetch group non-nulls
+                group_nns = knockadapt.utilities.fetch_group_nonnulls(beta, groups)
+
                 # Oracle for full data
-                fdps, powers, hat_powers = gkval.eval_grouping(
+                fdps, powers, hat_powers, W = gkval.eval_grouping(
                     X = X, y = y, groups = groups, 
                     S = S, copies = copies
                 )
 
+                # Can only cache first W - combine vals with non-null info
+                W = np.append(W[0], np.zeros((p-num_groups)))
+                group_nns = np.append(group_nns, np.zeros((p-num_groups)))
+                group_nns = ['null' if x==0 else 'non-null' for x in group_nns]
+                W = [str(flag)+'|'+str(round(w, 6)) for w, flag in zip(W, group_nns)]
+
                 # Add power to regular oracle
                 to_add = pd.DataFrame(
-                    columns = ORACLE_COLUMNS,
+                    columns = ORACLE_COLUMNS + list(range(p)),
                     data = [[j, cutoff, num_groups,
                             feature_method, link_method, 
                             hat_powers.mean(), powers.mean(), 
-                            fdps.mean(), 'oracle']]
+                            fdps.mean(), 'oracle'] + W]
                 )
                 outputs_to_add.append(to_add)
 
@@ -141,7 +150,7 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                     # Add power to split oracle
 
                     # Oracle for half data 
-                    half_fdps, half_powers, half_hat_powers = gkval.eval_grouping(
+                    half_fdps, half_powers, half_hat_powers, half_W = gkval.eval_grouping(
                         X = X[0:int(n/2)], y = y[0:int(n/2)], 
                         groups = groups,
                         S = S, copies = copies
@@ -159,7 +168,7 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                     outputs_to_add.append(half_to_add)
 
                     # Oracle for recycled data
-                    rec_fdps, rec_powers, rec_hat_powers = gkval.eval_grouping(
+                    rec_fdps, rec_powers, rec_hat_powers, rec_W = gkval.eval_grouping(
                         X = X, y = y, 
                         groups = groups,
                         recycle_up_to = int(n/2),
@@ -290,7 +299,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                     recycle_up_to = None
 
                 # Calculate oracle power --------
-                o_fdps, o_powers, o_hat_powers = gkval.eval_grouping(
+                o_fdps, o_powers, o_hat_powers, _ = gkval.eval_grouping(
                     X = X_to_use, y = y_to_use, 
                     groups = groups, 
                     recycle_up_to = recycle_up_to,
@@ -318,7 +327,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
             link_S_matrices = S_matrixes[link_method]
 
             # Calculate adaptive power for nonsplit method -----
-            _, ns_fdps, ns_powers, ns_hat_powers = gkval.eval_many_cutoffs(
+            _, ns_fdps, ns_powers, ns_hat_powers, _ = gkval.eval_many_cutoffs(
                 X = X, y = y, link = link,
                 cutoffs = link_cutoffs,
                 reduction = reduction,
@@ -390,7 +399,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
             # Repeat but for sample-splitting method ----------
 
             # Split in half and "train"
-            _, spl_fdps, spl_powers, spl_hat_powers = gkval.eval_many_cutoffs(
+            _, spl_fdps, spl_powers, spl_hat_powers, _ = gkval.eval_many_cutoffs(
                 X = trainX, y = trainy, link = link,
                 cutoffs = link_cutoffs, reduction = reduction,
                 S_matrices = link_S_matrices,
@@ -406,7 +415,7 @@ def one_sample_comparison(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
             # Now test to see what discoveries we find
             # This involves knockoff recycling 
             S = S_matrixes[link_method][selected_cutoff]
-            spl_fdps, spl_powers, spl_hat_powers = gkval.eval_grouping(
+            spl_fdps, spl_powers, spl_hat_powers, _ = gkval.eval_grouping(
                 X = X, y = y, groups = selected_grouping, 
                 recycle_up_to = int(n/2), S = S, copies = copies
             )
