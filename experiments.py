@@ -37,6 +37,26 @@ def test_DGP_consistency(
 
 ### -------------- Helper function in general ---------------------------
 
+def package_W_stats(W, groups, beta):
+
+    # Fetch non-nulls and group sizes
+    p = beta.shape[0]
+    num_groups = np.unique(groups).shape[0]
+    group_sizes = knockadapt.utilities.calc_group_sizes(groups)
+    ordered_group_sizes = [group_sizes[j-1] for j in groups]
+    group_nns = knockadapt.utilities.fetch_group_nonnulls(beta, groups)
+
+    # combine vals with non-null info + groupsize
+    W = np.append(W, np.zeros((p-num_groups)))
+    group_nns = np.append(group_nns, np.zeros((p-num_groups)))
+    # Add null, non-null information
+    group_nns = ['null' if x==0 else 'non-null' for x in group_nns]
+    W = [str(flag)+'|'+str(round(w, 6)) for w, flag in zip(W, group_nns)]
+    # Add size information
+    W = [str(size)+'|'+w for w, size in zip(W, ordered_group_sizes)]
+
+    return W
+
 ### -------------- HELPER FUNCTIONS FOR MULTIPROCESSING -----------------
 
 
@@ -129,11 +149,8 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                     S = S, copies = copies
                 )
 
-                # Can only cache first W - combine vals with non-null info
-                W = np.append(W[0], np.zeros((p-num_groups)))
-                group_nns = np.append(group_nns, np.zeros((p-num_groups)))
-                group_nns = ['null' if x==0 else 'non-null' for x in group_nns]
-                W = [str(flag)+'|'+str(round(w, 6)) for w, flag in zip(W, group_nns)]
+                # Can only cache first W (of potentially many copies)
+                W = package_W_stats(W[0], groups, beta)
 
                 # Add power to regular oracle
                 to_add = pd.DataFrame(
@@ -156,13 +173,16 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                         S = S, copies = copies
                     )
 
+                    # Can only cache first W (of potentially many copies)
+                    half_W = package_W_stats(half_W[0], groups, beta)
+
                     # Add to outputs
                     half_to_add = pd.DataFrame(
-                        columns = ORACLE_COLUMNS,
+                        columns = ORACLE_COLUMNS + list(range(p)),
                         data = [[j, cutoff, num_groups,
                                  feature_method, link_method, 
                                  half_hat_powers.mean(), half_powers.mean(), 
-                                 half_fdps.mean(), 'split_oracle']]
+                                 half_fdps.mean(), 'split_oracle'] + half_W]
                     )
 
                     outputs_to_add.append(half_to_add)
@@ -174,14 +194,16 @@ def eval_oracles(j, n, p, q, X, y, corr_matrix, Q, beta, sample_kwargs,
                         recycle_up_to = int(n/2),
                         S = S, copies = copies
                     )
+                    # Can only cache first W (of potentially many copies)
+                    rec_W = package_W_stats(rec_W[0], groups, beta)
 
                     # Recycling oracle is the same
                     rec_to_add = pd.DataFrame(
-                        columns = ORACLE_COLUMNS,
+                        columns = ORACLE_COLUMNS + list(range(p)),
                         data = [[j, cutoff,  num_groups,
                                 feature_method, link_method, 
                                 rec_hat_powers.mean(), rec_powers.mean(),
-                                rec_fdps.mean(), 'rec_oracle']]
+                                rec_fdps.mean(), 'rec_oracle'] + rec_W]
                     )
 
                     outputs_to_add.append(rec_to_add)
