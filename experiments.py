@@ -43,17 +43,18 @@ def package_W_stats(W, groups, beta):
     p = beta.shape[0]
     num_groups = np.unique(groups).shape[0]
     group_sizes = knockadapt.utilities.calc_group_sizes(groups)
-    ordered_group_sizes = [group_sizes[j-1] for j in groups]
     group_nns = knockadapt.utilities.fetch_group_nonnulls(beta, groups)
 
     # combine vals with non-null info + groupsize
-    W = np.append(W, np.zeros((p-num_groups)))
-    group_nns = np.append(group_nns, np.zeros((p-num_groups)))
+    padding = np.zeros((p-num_groups))
+    W = np.append(W, padding)
+    group_nns = np.append(group_nns, padding)
+    group_sizes = np.append(group_sizes, padding)
     # Add null, non-null information
     group_nns = ['null' if x==0 else 'non-null' for x in group_nns]
     W = [str(flag)+'|'+str(round(w, 6)) for w, flag in zip(W, group_nns)]
     # Add size information
-    W = [str(size)+'|'+w for w, size in zip(W, ordered_group_sizes)]
+    W = [str(size)+'|'+w for w, size in zip(W, group_sizes)]
 
     return W
 
