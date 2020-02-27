@@ -217,6 +217,11 @@ def main(args):
 					help='If true, do not compute group lasso feature statistic (default: False)',
 					default = 'False')
 
+	parser.add_argument('--sparsity', dest = 'sparsity',
+					type=float,
+					help='Sparsity of the coefficient set (default: 0.5)',
+					default = 0.5)
+
 
 
 	# Parse args, including some boolean flags
@@ -280,6 +285,7 @@ def main(args):
 	if args.covmethod.lower() == 'ar1':
 		sample_kwargs['a'] = args.a
 		sample_kwargs['b'] = args.b
+		sample_kwargs['sparsity'] = args.sparsity
 	if args.covmethod.lower() == 'daibarber2016':
 		if curve_param != 'gamma':
 			sample_kwargs['gamma'] = args.gamma
@@ -314,7 +320,8 @@ def main(args):
 		ns = [n]
 	else:
 		if curve_param == '': 
-			ns = [p/4, p/2, p, 2*p, 4*p]
+            #ns = [p, 2*p, 4*p]
+            ns = [p/4, p/2, p, 2*p, 4*p, 8*p]
 			ns = [int(n) for n in ns]
 		else:
 			raise ValueError(f"Cannot set n = 0 and have curve_param {curve_param}")
