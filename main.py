@@ -320,8 +320,8 @@ def main(args):
 		ns = [n]
 	else:
 		if curve_param == '': 
-            #ns = [p, 2*p, 4*p]
-            ns = [p/4, p/2, p, 2*p, 4*p, 8*p]
+			#ns = [p, 2*p, 4*p]
+			ns = [p/4, p/2, p, 2*p, 4*p, 8*p]
 			ns = [int(n) for n in ns]
 		else:
 			raise ValueError(f"Cannot set n = 0 and have curve_param {curve_param}")
