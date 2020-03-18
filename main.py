@@ -212,10 +212,16 @@ def main(args):
 					help='If true, also use vanilla linear regression as a feature statistic (default: False)',
 					default = 'False')
 
+	parser.add_argument('--grouplasso', dest = 'grouplasso',
+					type=str,
+					help='If true, compute group lasso feature statistic (default: False)',
+					default = 'False')
+
 	parser.add_argument('--nolasso', dest = 'nolasso',
 					type=str,
-					help='If true, do not compute group lasso feature statistic (default: False)',
+					help='If true, do not compute non-group lasso feature statistic (default: False)',
 					default = 'False')
+
 
 	parser.add_argument('--sparsity', dest = 'sparsity',
 					type=float,
@@ -233,6 +239,7 @@ def main(args):
 	args.margcorr = str2bool(args.margcorr)
 	args.linreg = str2bool(args.linreg)
 	args.nolasso = str2bool(args.nolasso)
+	args.grouplasso = str2bool(args.grouplasso)
 
 	sys.stdout.write(f'Parsed args are {args} \n')
 
@@ -270,8 +277,11 @@ def main(args):
 	feature_fns = {}
 	feature_fn_kwargs = {}
 	if not args.nolasso:
-		feature_fns['group_LCD'] = knockoff_stats.group_lasso_LCD
-		feature_fn_kwargs['group_LCD'] = {'use_pyglm':use_pyglm}
+		feature_fns['LCD'] = knockoff_stats.lasso_statistic
+		feature_fn_kwargs['LCD'] = {'use_pyglm':use_pyglm, 'group_lasso':False}
+	if args.grouplasso:
+		feature_fns['group_LCD'] = knockoff_stats.lasso_statistic
+		feature_fn_kwargs['group_LCD'] = {'use_pyglm':use_pyglm, 'group_lasso':True}
 	if args.margcorr:
 		feature_fns['margcorr']  = knockoff_stats.marg_corr_diff
 		feature_fn_kwargs['margcorr'] = {}
@@ -311,7 +321,7 @@ def main(args):
 	all_fname += f'/seed{seed}_p{p}/'
 	if not os.path.exists(all_fname):
 		os.makedirs(all_fname)
-	all_fname += f'q{q}_N{num_datasets}'
+	all_fname += f'q{q}_N{num_datasets}_n{n}' 
 	all_fname_csv = all_fname + '.csv'
 	all_fname_oracle_csv = all_fname + '_oracle.csv'
 
