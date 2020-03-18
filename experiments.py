@@ -2,7 +2,7 @@ import sys
 import numpy as np
 from scipy import stats
 import knockadapt
-from knockadapt.knockoff_stats import calc_nongroup_LSM
+from knockadapt.knockoff_stats import lasso_statistic
 import scipy.cluster.hierarchy as hierarchy
 
 import time
@@ -473,7 +473,7 @@ def compare_methods(
                     S_methods = None,
                     split = True,
                     sample_kwargs = {'coeff_size':10,},
-                    feature_fns = {'LSM':calc_nongroup_LSM},
+                    feature_fns = {'LCD':lasso_statistic},
                     feature_fn_kwargs = {},
                     S_kwargs = {'objective':'norm', 'norm_type':'fro'},
                     copies = 1,
