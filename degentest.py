@@ -32,6 +32,12 @@ from smatrices import construct_S_path
 from multiprocessing import Pool
 from functools import partial
 
+def fetch_kwarg(kwargs, key, default=None):
+	""" Utility function for parsing """
+	if key in kwargs:
+		return kwargs.pop(key)
+	else:
+		return default
 
 def apply_pool(func, all_inputs, num_processes):
 	""" Utility function"""
@@ -234,55 +240,82 @@ def parse_args(args):
 
 def main(args):
 
-	# Add kwargs
+
+	# Create kwargs
 	kwargs = parse_args(args)
+	print(f"Args were {args}")
 	print(f"Sample kwargs are {kwargs}")
 
-	# Parse reps and kwargs
-	if 'reps' in kwargs:
-		reps = kwargs.pop('reps')
-	else:
-		reps = 50
-	if 'num_processes' in kwargs:
-		num_processes = kwargs.pop('num_processes')
-	else:
-		num_processes = 5
+	# Parse some special non-graph kwargs
+	reps = fetch_kwarg(kwargs, 'reps', default=50)
+	num_processes = fetch_kwarg(kwargs, 'num_processes', default=5)
 
-	# Create DGP
-	np.random.seed(110)
-	_, _, beta, _, Sigma = knockadapt.graphs.sample_data(
-		**kwargs
-	)
+	# Curve parameter - create values
+	curve_param = fetch_kwarg(kwargs, 'curve_param', default='None')
+	num_param_values = fetch_kwarg(kwargs, 'num_param_values', default=5)
+	param_min = fetch_kwarg(kwargs, 'param_min', default=0)
+	param_max = fetch_kwarg(kwargs, 'param_max', default=1)
+	if curve_param == "None":
+		param_values = [None]
+	else:
+		param_values = np.linspace(
+			param_min, param_max, num_param_values
+		)
+		param_values = np.around(param_values, 3)
 
 	# Create output path
 	output_dir = 'data/degentest/'
 	if not os.path.exists(output_dir):
 		os.makedirs(output_dir)
+	output_path = output_dir + f'curve_param{curve_param}_'
 	kwarg_keys = sorted([k for k in kwargs])
 	for k in kwarg_keys:
-		output_dir += f'{k}{kwargs[k]}'
-	output_dir += 'results.csv'
+		output_path += f'{k}{kwargs[k]}_'
+	output_path += 'results.csv'
 
-	# Create groups and solve SDP
-	p = Sigma.shape[0]
-	groups = np.arange(1, p+1, 1)
-	S = knockadapt.knockoffs.solve_group_SDP(Sigma, groups=groups)
 
-	# Create results
-	result = analyze_degen_solns(
-		Sigma=Sigma,
-		beta=beta,
-		S=S,
-		n_values=None,
-		prop_rec=None,
-		reps=reps,
-		num_processes=num_processes,
-		**kwargs
-	)
+	# Loop through curve parameters
+	all_results = pd.DataFrame()
+	for val in param_values:
 
-	result.to_csv(output_dir)
-	return result
+		# Add to kwargs (unless it's a dummy)
+		if curve_param != "None":
+			print(f'Analyzing {curve_param} value {val} at time {time.time() - time0}')
+			kwargs[curve_param] = val
+
+		# Create DGP
+		np.random.seed(110)
+		_, _, beta, _, Sigma = knockadapt.graphs.sample_data(
+			**kwargs
+		)
+
+		# Create groups and solve SDP
+		p = Sigma.shape[0]
+		groups = np.arange(1, p+1, 1)
+		print(f'Computing S matrix, time is {time.time() - time0}')
+		S = knockadapt.knockoffs.solve_group_SDP(Sigma, groups=groups)
+		print(f'Finished computing S matrix, time is {time.time() - time0}')
+
+		# Create results
+		result = analyze_degen_solns(
+			Sigma=Sigma,
+			beta=beta,
+			S=S,
+			n_values=None,
+			prop_rec=None,
+			reps=reps,
+			num_processes=num_processes,
+			**kwargs
+		)
+		all_results = all_results.append(
+			result, 
+			ignore_index = True
+		)
+		all_results.to_csv(output_path)
+
+	return all_results
 
 if __name__ == '__main__':
 
+	time0 = time.time()
 	main(sys.argv)
