@@ -22,10 +22,6 @@ import scipy as sp
 from scipy import stats
 import scipy.cluster.hierarchy as hierarchy
 
-import seaborn as sns
-import matplotlib.pyplot as plt
-
-
 import experiments
 from smatrices import construct_S_path
 
