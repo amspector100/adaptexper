@@ -272,12 +272,12 @@ def main(args):
 
 	# Loop through curve parameters
 	all_results = pd.DataFrame()
-	for val in param_values:
+	for param_val in param_values:
 
 		# Add to kwargs (unless it's a dummy)
 		if curve_param != "None":
-			print(f'Analyzing {curve_param} value {val} at time {time.time() - time0}')
-			kwargs[curve_param] = val
+			print(f'Analyzing {curve_param} value {param_val} at time {time.time() - time0}')
+			kwargs[curve_param] = param_val
 
 		# Create DGP
 		np.random.seed(110)
@@ -303,6 +303,8 @@ def main(args):
 			num_processes=num_processes,
 			**kwargs
 		)
+		if curve_param != "None":
+			result[curve_param] = param_val
 		all_results = all_results.append(
 			result, 
 			ignore_index = True
