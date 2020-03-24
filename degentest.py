@@ -11,19 +11,11 @@ except ImportError:
 	sys.stdout.write(f'Knockoff dir is {knockoff_directory}\n')
 	sys.path.insert(0, os.path.abspath(knockoff_directory))
 	import knockadapt
-from knockadapt import knockoff_stats
-from knockadapt.utilities import random_permutation_inds, chol2inv
 from knockadapt.knockoff_filter import mx_knockoff_filter
 
 import warnings
 import numpy as np
 import pandas as pd
-import scipy as sp
-from scipy import stats
-import scipy.cluster.hierarchy as hierarchy
-
-import experiments
-from smatrices import construct_S_path
 
 from multiprocessing import Pool
 from functools import partial
@@ -49,65 +41,91 @@ def apply_pool(func, all_inputs, num_processes):
 
 	return all_outputs
 
+def single_dataset_power_fdr(
+	seed,
+	Sigma,
+	beta,
+	groups,
+	S,
+	q=0.2,
+	rec_up_to=None,
+	**kwargs
+):
+	# Fetch groups
+	p = Sigma.shape[0]
+	if groups is None:
+		groups = np.arange(1, p+1, 1)
+	group_nonnulls = knockadapt.utilities.fetch_group_nonnulls(
+		beta, groups
+	)
+	
+	np.random.seed(seed)
+	X, y, _, _, _ = knockadapt.graphs.sample_data(
+		corr_matrix=Sigma,
+		beta=beta,
+		**kwargs
+	)
+
+	# Infer y_dist
+	if 'y_dist' in kwargs:
+		y_dist = kwargs['y_dist']
+	else:
+		y_dist = 'gaussian'
+
+	# Run MX knockoff filter
+	selections = mx_knockoff_filter(
+		X=X, 
+		y=y, 
+		Sigma=Sigma, 
+		groups=groups,
+		recycle_up_to=rec_up_to,
+		feature_stat_kwargs={'group_lasso':False, 'y_dist':y_dist},
+		knockoff_kwargs={'S':S, 'verbose':False},
+		fdr=q,
+	)
+
+	# Calculate fdp, power, return
+	fdp = np.sum(selections*(1-group_nonnulls))/max(1, np.sum(selections))
+	power = np.sum(selections*group_nonnulls)/max(1, np.sum(group_nonnulls))
+
+	return (power, fdp)
 
 def calc_power_and_fdr(
-	rec_up_to, 
 	Sigma,
 	beta,
 	S,
 	groups=None,
 	q=0.2,
 	reps=100,
+	rec_up_to=None, 
 	num_processes=1,
 	**kwargs
 ):
 	
-	np.random.seed(110)
-
 	# Fetch nonnulls
 	p = Sigma.shape[0]
-	if groups is None:
-		groups = np.arange(1, p+1, 1)
-	group_nonnulls = knockadapt.utilities.fetch_group_nonnulls(beta, groups)
-
-	# Container for fdps
-	fdps = []
-	powers = []
-
-	# Sample data reps times
-	for j in range(reps):
-		X, y, _, _, _ = knockadapt.graphs.sample_data(
-			corr_matrix=Sigma,
-			beta=beta,
-			**kwargs
-		)
-
-		# Infer y_dist
-		if 'y_dist' in kwargs:
-			y_dist = kwargs['y_dist']
-		else:
-			y_dist = 'gaussian'
-
-		# Run MX knockoff filter
-		selections = mx_knockoff_filter(
-			X=X, 
-			y=y, 
-			Sigma=Sigma, 
-			groups=groups,
-			recycle_up_to=rec_up_to,
-			feature_stat_kwargs={'group_lasso':False, 'y_dist':y_dist},
-			knockoff_kwargs={'S':S, 'verbose':False},
-			fdr=q,
-		)
-
-		# Calculate fdp
-		fdp = np.sum(selections*(1-group_nonnulls))/max(1, np.sum(selections))
-		fdps.append(fdp)
-		
-		# Calculate power
-		power = np.sum(selections*group_nonnulls)/max(1, np.sum(group_nonnulls))
-		powers.append(power)
-		
+	# Sample data reps times and calc power/fdp
+	partial_sd_power_fdr = partial(
+		single_dataset_power_fdr, 
+		rec_up_to=rec_up_to, 
+		Sigma=Sigma,
+		beta=beta,
+		groups=groups,
+		S=S,
+		q=q, 
+		**kwargs
+	)
+	# (Possibly) apply multiprocessing
+	all_inputs = list(range(reps))
+	num_processes = min(len(all_inputs), num_processes)
+	all_outputs = apply_pool(
+		func = partial_sd_power_fdr,
+		all_inputs = all_inputs,
+		num_processes=num_processes
+	)
+	# Extract output and return
+	powers = [x[0] for x in all_outputs]
+	fdps = [x[1] for x in all_outputs]
 	return np.array(powers), np.array(fdps)
 
 def wrap_calc_power_and_fdr(
@@ -123,18 +141,18 @@ def wrap_calc_power_and_fdr(
 
 	# Pass args for recycling
 	out_rec = calc_power_and_fdr(
-		rec_up_to,
 		*args,
-		n = n,
+		rec_up_to=rec_up_to,
+		n=n,
 		**kwargs
 	)
 
 	# Pass args for scaling
 	kwargs['S'] = (1-prop)*kwargs['S'].copy()
 	out_scale = calc_power_and_fdr(
-		None,
 		*args,
-		n = n,
+		n=n,
+		rec_up_to=None,
 		**kwargs
 	)
 
@@ -149,6 +167,7 @@ def analyze_degen_solns(
 	prop_rec=None,
 	reps=50,
 	num_processes=5,
+	q=0.2,
 	**kwargs
 	):
 	
@@ -160,10 +179,44 @@ def analyze_degen_solns(
 	if prop_rec is None:
 		prop_rec = np.arange(0, 11, 1)/10
 
-	# Helper function which will be used for multiprocessing -------
+	# Final output
+	counter = 0
+	result_df = pd.DataFrame(
+		columns = ['power', 'fdp', 'n', 'method', 'prop_rec']
+	)
+
+	### Calculate power of optimal S using ncvx solver
+	# Optimal S
+	groups = np.arange(1, p+1, 1)
+	opt = knockadapt.nonconvex_sdp.NonconvexSDPSolver(
+		Sigma=Sigma,
+		groups=groups,
+		init_S=S
+	)
+	opt_S = opt.optimize(max_epochs=1000)
+	print(opt_S)
+	for n in n_values:
+		powers, fdps = calc_power_and_fdr(
+			Sigma=Sigma,
+			beta=beta,
+			S=opt_S,
+			groups=groups,
+			q=q,
+			reps=4*reps,
+			rec_up_to=None, 
+			num_processes=num_processes,
+			n=n,
+			**kwargs
+		)
+		for power, fdp in zip(powers, fdps):
+			result_df.loc[counter] = [power, fdp, n, 'psgd', 0]
+			counter += 1
+
+	### Calculate the curve over recycling/scaling
+	# Helper function which will be used for multiprocessing 
 	partial_calc_power_and_fdr = partial(
 		wrap_calc_power_and_fdr, 
-		Sigma=Sigma, beta=beta, S=S, q=0.2, reps=reps, **kwargs
+		Sigma=Sigma, beta=beta, S=S, q=q, reps=reps, **kwargs
 	)
 
 	# Construct arguments
@@ -181,11 +234,7 @@ def analyze_degen_solns(
 		num_processes=num_processes
 	)
 
-	# Construct pandas output
-	result_df = pd.DataFrame(
-		columns = ['power', 'fdp', 'n', 'method', 'prop_rec']
-	)
-	counter = 0
+	# Add to pandas output
 	for (out_rec, out_scale, n, prop) in all_outputs:
 
 		# Add recycling powers/fdps
