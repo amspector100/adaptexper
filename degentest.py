@@ -61,7 +61,7 @@ def single_dataset_power_fdr(
 	q=0.2,
 	rec_up_to=None,
 	normalize=True,
-	feature_stat_fn=knockadapt.knockoff_stats.lasso_statistic,
+	feature_stat_fn=None,
 	feature_stat_kwargs={},
 	**kwargs
 ):
@@ -86,10 +86,12 @@ def single_dataset_power_fdr(
 	else:
 		y_dist = 'gaussian'
 
-	# Infer feature_stat_kwargs
-	feature_stat_kwargs['y_dist'] = y_dist
-	if 'group_lasso' not in feature_stat_kwargs:
-		feature_stat_kwargs['group_lasso'] = False
+	# Infer feature_stat_fn and its kwargs
+	if feature_stat_fn is None:
+		feature_stat_fn=knockadapt.knockoff_stats.lasso_statistic
+		feature_stat_kwargs['y_dist'] = y_dist
+		if 'group_lasso' not in feature_stat_kwargs:
+			feature_stat_kwargs['group_lasso'] = False
 
 	# Run MX knockoff filter
 	selections = mx_knockoff_filter(
@@ -202,7 +204,7 @@ def analyze_degen_solns(
 			int(p/4), int(p/2), int(p/1.5), int(p), int(2*p), int(4*p)
 		]
 	if prop_rec is None:
-		prop_rec = np.arange(0, 11, 1)/10
+		prop_rec = np.arange(0, 8, 1)/10
 
 	# Check if we're going to run 
 	# S_opt with recycling
@@ -355,6 +357,8 @@ def main(args):
 	kwarg_keys = sorted([k for k in kwargs])
 	for k in kwarg_keys:
 		output_path += f'{k}{kwargs[k]}_'
+	if test_recycling:
+		output_path += 'rectest_'
 	output_path += 'results.csv'
 
 
