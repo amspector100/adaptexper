@@ -27,6 +27,17 @@ def fetch_kwarg(kwargs, key, default=None):
 	else:
 		return default
 
+def str2bool(v):
+	""" Helper function, converts strings to boolean vals""" 
+	if isinstance(v, bool):
+		return v
+	if v.lower() in ('yes', 'true', 't', 'y', '1'):
+		return True
+	elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+		return False
+	else:
+		raise ValueError('Boolean value expected.')
+
 def apply_pool(func, all_inputs, num_processes):
 	""" Utility function"""
 
@@ -49,6 +60,9 @@ def single_dataset_power_fdr(
 	S,
 	q=0.2,
 	rec_up_to=None,
+	normalize=True,
+	feature_stat_fn=knockadapt.knockoff_stats.lasso_statistic,
+	feature_stat_kwargs={},
 	**kwargs
 ):
 	# Fetch groups
@@ -72,6 +86,11 @@ def single_dataset_power_fdr(
 	else:
 		y_dist = 'gaussian'
 
+	# Infer feature_stat_kwargs
+	feature_stat_kwargs['y_dist'] = y_dist
+	if 'group_lasso' not in feature_stat_kwargs:
+		feature_stat_kwargs['group_lasso'] = False
+
 	# Run MX knockoff filter
 	selections = mx_knockoff_filter(
 		X=X, 
@@ -79,14 +98,19 @@ def single_dataset_power_fdr(
 		Sigma=Sigma, 
 		groups=groups,
 		recycle_up_to=rec_up_to,
-		feature_stat_kwargs={'group_lasso':False, 'y_dist':y_dist},
+		feature_stat_fn=feature_stat_fn,
+		feature_stat_kwargs=feature_stat_kwargs,
 		knockoff_kwargs={'S':S, 'verbose':False},
 		fdr=q,
 	)
 
 	# Calculate fdp, power, return
-	fdp = np.sum(selections*(1-group_nonnulls))/max(1, np.sum(selections))
-	power = np.sum(selections*group_nonnulls)/max(1, np.sum(group_nonnulls))
+	fdp = np.sum(selections*(1-group_nonnulls))
+	power = np.sum(selections*group_nonnulls)
+	# Possibly divide by # of non-nulls
+	if normalize:
+		fdp = fdp/max(1, np.sum(selections))
+		power = power/max(1, np.sum(group_nonnulls))
 
 	return (power, fdp)
 
@@ -168,6 +192,7 @@ def analyze_degen_solns(
 	reps=50,
 	num_processes=5,
 	q=0.2,
+	test_recycling=False,
 	**kwargs
 	):
 	
@@ -179,6 +204,13 @@ def analyze_degen_solns(
 	if prop_rec is None:
 		prop_rec = np.arange(0, 11, 1)/10
 
+	# Check if we're going to run 
+	# S_opt with recycling
+	if test_recycling:
+		psgd_prop_rec = prop_rec
+	else:
+		psgd_prop_rec = [0]
+
 	# Final output
 	counter = 0
 	result_df = pd.DataFrame(
@@ -186,31 +218,36 @@ def analyze_degen_solns(
 	)
 
 	### Calculate power of optimal S using ncvx solver
-	# Optimal S
+	### for different types of recycling
 	groups = np.arange(1, p+1, 1)
-	opt = knockadapt.nonconvex_sdp.NonconvexSDPSolver(
-		Sigma=Sigma,
-		groups=groups,
-		init_S=S
-	)
-	opt_S = opt.optimize(max_epochs=1000)
-	print(opt_S)
-	for n in n_values:
-		powers, fdps = calc_power_and_fdr(
+	for prop in psgd_prop_rec:
+		# Optimal S
+		opt = knockadapt.nonconvex_sdp.NonconvexSDPSolver(
 			Sigma=Sigma,
-			beta=beta,
-			S=opt_S,
 			groups=groups,
-			q=q,
-			reps=4*reps,
-			rec_up_to=None, 
-			num_processes=num_processes,
-			n=n,
-			**kwargs
+			init_S=S,
+			rec_prop=prop
 		)
-		for power, fdp in zip(powers, fdps):
-			result_df.loc[counter] = [power, fdp, n, 'psgd', 0]
-			counter += 1
+		opt_S = opt.optimize(max_epochs=750)
+		print(opt_S)
+		print(f'Finished computing opt_S matrix for prop_rec = {prop}, time is {time.time() - time0}')
+		for n in n_values:
+			rec_up_to = int(prop*n)
+			powers, fdps = calc_power_and_fdr(
+				Sigma=Sigma,
+				beta=beta,
+				S=opt_S,
+				groups=groups,
+				q=q,
+				reps=reps,
+				rec_up_to=rec_up_to, 
+				num_processes=num_processes,
+				n=n,
+				**kwargs
+			)
+			for power, fdp in zip(powers, fdps):
+				result_df.loc[counter] = [power, fdp, n, 'psgd', prop]
+				counter += 1
 
 	### Calculate the curve over recycling/scaling
 	# Helper function which will be used for multiprocessing 
@@ -294,6 +331,8 @@ def main(args):
 	# Parse some special non-graph kwargs
 	reps = fetch_kwarg(kwargs, 'reps', default=50)
 	num_processes = fetch_kwarg(kwargs, 'num_processes', default=5)
+	test_recycling = fetch_kwarg(kwargs, 'test_recycling', default=False)
+	test_recycling = str2bool(test_recycling)
 
 	# Curve parameter - create values
 	curve_param = fetch_kwarg(kwargs, 'curve_param', default='None')
@@ -350,6 +389,7 @@ def main(args):
 			prop_rec=None,
 			reps=reps,
 			num_processes=num_processes,
+			test_recycling=test_recycling,
 			**kwargs
 		)
 		if curve_param != "None":
