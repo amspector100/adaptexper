@@ -266,11 +266,31 @@ def analyze_degen_solns(
 		new_filter_kwargs = {
 			key:val for key, val in zip(filter_keys, filter_vals)
 		}
+
+		# In high dimensional cases or binomial cases,
+		# don't fit OLS.
+		if 'feature_stat_fn' in new_filter_kwargs:
+			if new_filter_kwargs['feature_stat_fn'] == 'ols':
+				ols_flag = True
+			else:
+				ols_flag = False
+		else:
+			ols_flag = False
+
 		for sample_vals in sample_product:
 			sample_vals = list(sample_vals)
 			new_sample_kwargs = {
 				key:val for key, val in zip(sample_keys, sample_vals)
 			}
+
+			# Don't run OLS in certain cases
+			if ols_flag:
+				if new_sample_kwargs['n'] < 2*new_sample_kwargs['p']:
+					continue
+				if 'y_dist' in new_sample_kwargs:
+					if new_sample_kwargs['y_dist'] == 'binomial':
+						continue
+
 			for fstat_vals in fstat_product:
 				# Extract feature-statistic kwargs
 				# and place them properly (as a dictionary value
@@ -482,12 +502,11 @@ def main(args):
 		)
 		for key in dgp_keys:
 			result[key] = new_dgp_kwargs[key]
-
+		print(result)
 		all_results = all_results.append(
 			result, 
 			ignore_index = True
 		)
-		print(all_results)
 		all_results.to_csv(output_path)
 
 	return all_results
