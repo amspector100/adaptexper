@@ -45,6 +45,17 @@ def val2list(val):
 		return [val] 
 	return val
 
+def dict2keyproduct(dictionary):
+	""" Takes a dictionary mapping to lists
+	and returns the sorted list of keys and 
+	the cartesian product of each list."""
+	keys = sorted([key for key in dictionary])
+	components = []
+	for key in keys:
+		dictionary[key] = val2list(dictionary[key])
+		components.append(dictionary[key])
+	product = list(itertools.product(*components))
+	return keys, list(product)
 
 def apply_pool(func, all_inputs, num_processes):
 	""" Utility function"""
@@ -60,6 +71,62 @@ def apply_pool(func, all_inputs, num_processes):
 
 	return all_outputs
 
+def fetch_competitor_S(
+	Sigma,
+	groups,
+):
+
+	### Special case: detect if Sigma is equicorrelated,
+	# in which case we can calculate the solution analytically
+	# for ungrouped knockoffs.
+	p = Sigma.shape[0]
+	if np.unique(groups).shape[0] == p:
+		rho = Sigma[0, 1]
+		equicorr = rho*np.ones((p, p)) + (1-rho)*np.eye(p)
+		if np.all(Sigma==equicorr):
+			print(f"Sigma is equicorr (rho={rho}), using analytical solution")
+			S_SDP = min(1, 2-2*rho)*np.eye(p)
+			#scale_FKTP = (2-2*rho)*(p-np.sqrt(p**2 - p))
+			scale_FKTP = (1-rho)
+			S_FKTP = scale_FKTP*np.eye(p)
+			print(S_FKTP)
+			if rho < 0.5:
+				return {'sdp':S_SDP, 'ftkp':S_FKTP}
+			else:
+				S_SDP_perturbed = S_SDP*(0.99)
+				return {
+				'sdp':S_SDP, 
+				'sdp_perturbed':S_SDP_perturbed, 
+				'ftkp':S_FKTP
+				}
+
+
+
+	### Calculate (A)SDP S-matrix 
+	if p <= 1000:
+		print(f'Computing SDP S matrix, time is {time.time() - time0}')
+		S_SDP = knockadapt.knockoffs.solve_group_SDP(Sigma, groups=groups)
+	else:
+		print(f'Computing ASDP S matrix, time is {time.time() - time0}')
+		S_SDP = knockadapt.knockoffs.solve_group_ASDP(
+			Sigma=Sigma, 
+			groups=groups, 
+			max_block=500, 
+			num_processes=num_processes,
+		)
+	print(f'Finished computing S matrix, time is {time.time() - time0}')
+
+	### Calculate FTKP matrix (nonconvex solver)
+	opt = knockadapt.nonconvex_sdp.NonconvexSDPSolver(
+		Sigma=Sigma,
+		groups=groups,
+		init_S=S_SDP,
+	)
+	S_FKTP = opt.optimize(max_epochs=100)
+	print(f'Finished computing opt_S matrix, time is {time.time() - time0}')
+
+	return {'sdp':S_SDP, 'ftkp':S_FKTP}
+
 def single_dataset_power_fdr(
 	seed,
 	Sigma,
@@ -73,6 +140,7 @@ def single_dataset_power_fdr(
 		'feature_stat_kwargs':{},
 	},
 ):
+
 	# Fetch groups
 	p = Sigma.shape[0]
 	if groups is None:
@@ -154,6 +222,7 @@ def analyze_degen_solns(
 	groups=None,
 	sample_kwargs={},
 	filter_kwargs={},
+	fstat_kwargs={},
 	q=0.2,
 	reps=50,
 	num_processes=5,
@@ -177,98 +246,68 @@ def analyze_degen_solns(
 	if groups is None:
 		groups = np.arange(1, p+1, 1)
 
-	# Construct/iterate cartesian product of sample kwargs
-	sample_keys = [key for key in sample_kwargs]
-	sample_components = []
-	for key in sample_keys:
-		sample_kwargs[key] = val2list(sample_kwargs[key])
-		sample_components.append(sample_kwargs[key])
-	sample_product = itertools.product(*sample_components)
-	print(sample_product)
-
-	# Similarly, construct product of filter kwargs
-	filter_keys = [key for key in filter_kwargs]
-	filter_components = []
-	for key in filter_keys:
-		filter_kwargs[key] = val2list(filter_kwargs[key])
-		filter_components.append(filter_kwargs[key])
-	filter_product = itertools.product(*filter_components)
-	print(filter_product)
+	# Construct/iterate cartesian product of sample, filter, fstat kwargs
+	sample_keys, sample_product = dict2keyproduct(sample_kwargs)
+	filter_keys, filter_product = dict2keyproduct(filter_kwargs)
+	fstat_keys, fstat_product = dict2keyproduct(fstat_kwargs)
 
 	# Initialize final output
 	counter = 0
-	columns = ['power', 'fdp', 'S_method'] + sample_keys + filter_keys
+	columns = ['power', 'fdp', 'S_method'] 
+	columns += sample_keys + filter_keys + fstat_keys
 	result_df = pd.DataFrame(columns=columns)
 
-	### Calculate (A)SDP S-matrix 
-	if p <= 1000:
-		print(f'Computing SDP S matrix, time is {time.time() - time0}')
-		S_SDP = knockadapt.knockoffs.solve_group_SDP(Sigma, groups=groups)
-	else:
-		print(f'Computing ASDP S matrix, time is {time.time() - time0}')
-		S_SDP = knockadapt.knockoffs.solve_group_ASDP(
-			Sigma, groups=groups, max_block=500, num_processes=num_processes
-		)
-	print(f'Finished computing S matrix, time is {time.time() - time0}')
-
-	### Calculate FTKP matrix (nonconvex solver)
-	opt = knockadapt.nonconvex_sdp.NonconvexSDPSolver(
-		Sigma=Sigma,
-		groups=groups,
-		init_S=S_SDP,
-	)
-	S_FKTP = opt.optimize(max_epochs=100)
-	print(f'Finished computing opt_S matrix, time is {time.time() - time0}')
+	# Create competitor S-matrices
+	S_matrices = fetch_competitor_S(Sigma, groups)
 
 	### Calculate power of knockoffs for the two different methods
 	for filter_vals in filter_product:
 		filter_vals = list(filter_vals)
 		new_filter_kwargs = {
-			key:val for key,val in zip(filter_keys, filter_vals)
+			key:val for key, val in zip(filter_keys, filter_vals)
 		}
 		for sample_vals in sample_product:
 			sample_vals = list(sample_vals)
 			new_sample_kwargs = {
-				key:val for key,val in zip(sample_keys, sample_vals)
+				key:val for key, val in zip(sample_keys, sample_vals)
 			}
-			print(reps)
-			print(new_sample_kwargs)
+			for fstat_vals in fstat_product:
+				# Extract feature-statistic kwargs
+				# and place them properly (as a dictionary value
+				# of the filter_kwargs)
+				fstat_vals = list(fstat_vals)
+				new_fstat_kwargs = {
+					key:val for key, val in zip(fstat_keys, fstat_vals)
+				}
+				if 'feature_stat_kwargs' in new_filter_kwargs:
+					new_filter_kwargs['feature_stat_kwargs'] = dict(
+						new_filter_kwargs['feature_stat_kwargs'],
+						**new_fstat_kwargs
+					)
+				else:
+					new_filter_kwargs['feature_stat_kwargs'] = new_fstat_kwargs
 
-			# Power/FDP for SDP
-			SDP_powers, SDP_fdps = calc_power_and_fdr(
-				Sigma=Sigma,
-				beta=beta,
-				S=S_SDP,
-				groups=groups,
-				q=q,
-				reps=reps,
-				num_processes=num_processes,
-				sample_kwargs=new_sample_kwargs,
-				filter_kwargs=new_filter_kwargs,
-			)
-			for power, fdp in zip(SDP_powers, SDP_fdps):
-				row = [power, fdp, 'sdp'] + sample_vals + filter_vals
-				print(row, columns)
-				result_df.loc[counter] = row 
-				counter += 1
+				# Loop through competitor methods
+				for S_method in S_matrices:
 
-			# Power/FDP for FTKP
-			SDP_powers, SDP_fdps = calc_power_and_fdr(
-				Sigma=Sigma,
-				beta=beta,
-				S=S_FKTP,
-				groups=groups,
-				q=q,
-				reps=reps,
-				num_processes=num_processes,
-				sample_kwargs=new_sample_kwargs,
-				filter_kwargs=new_filter_kwargs,
-			)
-			for power, fdp in zip(SDP_powers, SDP_fdps):
-				row = [power, fdp, 'tfkp'] + sample_vals + filter_vals
-				print(row, columns)
-				result_df.loc[counter] = row 
-				counter += 1
+					# Power/FDP for the method
+					S = S_matrices[S_method]
+					powers, fdps = calc_power_and_fdr(
+						Sigma=Sigma,
+						beta=beta,
+						S=S,
+						groups=groups,
+						q=q,
+						reps=reps,
+						num_processes=num_processes,
+						sample_kwargs=new_sample_kwargs,
+						filter_kwargs=new_filter_kwargs,
+					)
+					for power, fdp in zip(powers, fdps):
+						row = [power, fdp, S_method] 
+						row += sample_vals + filter_vals + fstat_vals
+						result_df.loc[counter] = row 
+						counter += 1
 
 	return result_df
 
@@ -297,7 +336,7 @@ def parse_args(args):
 	args = args[1:]
 
 	# Initialize kwargs constructor
-	key_types = ['dgp', 'sample', 'filter']
+	key_types = ['dgp', 'sample', 'filter', 'fstat']
 	all_kwargs = {ktype:{} for ktype in key_types}
 	key = None
 	key_type = None # One of dgp, sample, filter
@@ -359,13 +398,15 @@ def parse_args(args):
 
 			all_kwargs[key_type][key] = val2list(value)
 
-	return all_kwargs['dgp'], all_kwargs['sample'], all_kwargs['filter']
+	out = (all_kwargs[key_type] for key_type in key_types)
+	return out
 
 def main(args):
 	""" Layers of keyword arguments are as follows.
 	- dgp_kwargs: kwargs needed to create Sigma (e.g. p, method)
 	- sample_kwargs: kwargs needed to sample data (e.g. n)
 	- filter_kwargs: kwargs for the knockoff filter. (e.g. recycling)
+	- fstat_kwargs: kwargs for the feature statistic. (e.g. pair_agg)
 	
 	For each of these, keys mapping to iterables like lists or 
 	numpy arrays will be varied. See parse_args comments.
@@ -373,20 +414,21 @@ def main(args):
 	The MAIN constraint is that the same sample_kwargs must be used
 	for all dgp_kwargs. E.g., it will be difficult to vary both
 	a for an AR1 covariance matrix and delta for an ErdosRenyi covariance
-	matrix. The same goes for filter_kwargs.
+	matrix. The same goes for filter_kwargs abd fstat_kwargs.
 	"""
 
 
 	# Create kwargs
-	dgp_kwargs, sample_kwargs, filter_kwargs = parse_args(args)
+	dgp_kwargs, sample_kwargs, filter_kwargs, fstat_kwargs = parse_args(args)
 	print(f"Args were {args}")
-	print(f"DGP kwargs are {dgp_kwargs}")
-	print(f"Sample kwargs are {sample_kwargs}")
-	print(f"Filter kwargs are {filter_kwargs}")
 
 	# Parse some special non-graph kwargs
 	reps = fetch_kwarg(sample_kwargs, 'reps', default=[50])[0]
 	num_processes = fetch_kwarg(sample_kwargs, 'num_processes', default=[5])[0]
+	print(f"DGP kwargs are {dgp_kwargs}")
+	print(f"Sample kwargs are {sample_kwargs}")
+	print(f"Filter kwargs are {filter_kwargs}")
+	print(f"fstat kwargs are {fstat_kwargs}")
 
 
 	# Create output path
@@ -397,7 +439,8 @@ def main(args):
 	for kwargs in [dgp_kwargs,sample_kwargs, filter_kwargs]:
 		keys = sorted([k for k in kwargs])
 		for k in keys:
-			path_val = kwargs[k][0] if len(kwargs[k]) == 0 else "varied"
+			print(kwargs[k])
+			path_val = kwargs[k][0] if len(kwargs[k]) == 1 else "varied"
 			print(kwargs, k, path_val)
 			output_path += f'{k}{path_val}_'
 	output_path += 'results.csv'
@@ -413,7 +456,6 @@ def main(args):
 		dgp_kwargs[key] = val2list(dgp_kwargs[key])
 		dgp_components.append(dgp_kwargs[key])
 	dgp_product = itertools.product(*dgp_components)
-	print(dgp_product)
 
 	for dgp_vals in dgp_product:
 
@@ -433,6 +475,7 @@ def main(args):
 			groups=None,
 			sample_kwargs=sample_kwargs,
 			filter_kwargs=filter_kwargs,
+			fstat_kwargs=fstat_kwargs,
 			q=0.2,
 			reps=reps,
 			num_processes=num_processes,
