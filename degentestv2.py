@@ -11,7 +11,8 @@ except ImportError:
 	sys.stdout.write(f'Knockoff dir is {knockoff_directory}\n')
 	sys.path.insert(0, os.path.abspath(knockoff_directory))
 	import knockadapt
-from knockadapt.knockoff_filter import mx_knockoff_filter
+from knockadapt import knockoff_stats as kstats
+from knockadapt.knockoff_filter import MXKnockoffFilter
 
 import warnings
 import numpy as np
@@ -20,6 +21,9 @@ import pandas as pd
 import itertools
 from multiprocessing import Pool
 from functools import partial
+
+# Global: the set of antisymmetric functions we use
+PAIR_AGGS = ['cd', 'sm', 'scd']
 
 def fetch_kwarg(kwargs, key, default=None):
 	""" Utility function for parsing """
@@ -127,6 +131,27 @@ def fetch_competitor_S(
 
 	return {'sdp':S_SDP, 'ftkp':S_FKTP}
 
+def Z2selections(Z, groups, q, **kwargs):
+	
+	# Calculate W statistics
+	W = kstats.combine_Z_stats(Z, groups, **kwargs)
+
+	# Calculate selections 
+	T = kstats.data_dependent_threshhold(W=W, fdr=q)
+	selected_flags = (W >= T).astype("float32")
+	return selected_flags
+
+def selection2power(selections, group_nonnulls):
+	# Calculate fdp, power
+	fdp = np.sum(selections*(1-group_nonnulls))
+	power = np.sum(selections*group_nonnulls)
+
+	# Normalize
+	fdp = fdp/max(1, np.sum(selections))
+	power = power/max(1, np.sum(group_nonnulls))
+
+	return (power, fdp)
+
 def single_dataset_power_fdr(
 	seed,
 	Sigma,
@@ -157,8 +182,10 @@ def single_dataset_power_fdr(
 		**sample_kwargs
 	)
 
-	# Run MX knockoff filter
-	selections = mx_knockoff_filter(
+	# Run MX knockoff filter to obtain
+	# Z statistics
+	mxfilter = MXKnockoffFilter()
+	mxfilter.forward(
 		X=X, 
 		y=y, 
 		Sigma=Sigma, 
@@ -167,16 +194,25 @@ def single_dataset_power_fdr(
 		fdr=q,
 		**filter_kwargs
 	)
+	Z = mxfilter.Z
 
-	# Calculate fdp, power, return
-	fdp = np.sum(selections*(1-group_nonnulls))
-	power = np.sum(selections*group_nonnulls)
-	# Possibly divide by # of non-nulls
-	if normalize:
-		fdp = fdp/max(1, np.sum(selections))
-		power = power/max(1, np.sum(group_nonnulls))
+	# Calculate power/fdp for a variety of 
+	# antisymmetric functions
+	output = {}
+	for pair_agg in PAIR_AGGS:
+		# Start by creating selections
+		selections = Z2selections(
+			Z=Z,
+			groups=groups,
+			q=q,
+			pair_agg=pair_agg
+		)
+		# Then create power/fdp
+		output[pair_agg] = selection2power(
+			selections, group_nonnulls
+		)
 
-	return (power, fdp)
+	return output
 
 def calc_power_and_fdr(
 	Sigma,
@@ -212,9 +248,13 @@ def calc_power_and_fdr(
 		num_processes=num_processes
 	)
 	# Extract output and return
-	powers = [x[0] for x in all_outputs]
-	fdps = [x[1] for x in all_outputs]
-	return np.array(powers), np.array(fdps)
+	final_out = {}
+	for agg in PAIR_AGGS:
+		powers = np.array([x[agg][0] for x in all_outputs])
+		fdps = np.array([x[agg][1] for x in all_outputs])
+		final_out[agg] = (powers, fdps)
+
+	return final_out
 
 def analyze_degen_solns(
 	Sigma,
@@ -253,7 +293,7 @@ def analyze_degen_solns(
 
 	# Initialize final output
 	counter = 0
-	columns = ['power', 'fdp', 'S_method'] 
+	columns = ['power', 'fdp', 'S_method', 'antisym'] 
 	columns += sample_keys + filter_keys + fstat_keys
 	result_df = pd.DataFrame(columns=columns)
 
@@ -312,7 +352,7 @@ def analyze_degen_solns(
 
 					# Power/FDP for the method
 					S = S_matrices[S_method]
-					powers, fdps = calc_power_and_fdr(
+					out = calc_power_and_fdr(
 						Sigma=Sigma,
 						beta=beta,
 						S=S,
@@ -323,11 +363,14 @@ def analyze_degen_solns(
 						sample_kwargs=new_sample_kwargs,
 						filter_kwargs=new_filter_kwargs,
 					)
-					for power, fdp in zip(powers, fdps):
-						row = [power, fdp, S_method] 
-						row += sample_vals + filter_vals + fstat_vals
-						result_df.loc[counter] = row 
-						counter += 1
+					# Loop through antisymmetric functions
+					for agg in out:
+						powers, fdps = out[agg]
+						for power, fdp in zip(powers, fdps):
+							row = [power, fdp, S_method, agg] 
+							row += sample_vals + filter_vals + fstat_vals
+							result_df.loc[counter] = row 
+							counter += 1
 
 	return result_df
 
@@ -442,6 +485,10 @@ def main(args):
 	dgp_kwargs, sample_kwargs, filter_kwargs, fstat_kwargs = parse_args(args)
 	print(f"Args were {args}")
 
+	# Make sure pair_aggs is not being duplicated
+	if 'pair_agg' in fstat_kwargs:
+		raise ValueError("Many pair_aggs will be analyzed anyway. Do not add this as a fstat_kwarg.")
+
 	# Parse some special non-graph kwargs
 	reps = fetch_kwarg(sample_kwargs, 'reps', default=[50])[0]
 	num_processes = fetch_kwarg(sample_kwargs, 'num_processes', default=[5])[0]
@@ -459,9 +506,7 @@ def main(args):
 	for kwargs in [dgp_kwargs,sample_kwargs, filter_kwargs]:
 		keys = sorted([k for k in kwargs])
 		for k in keys:
-			print(kwargs[k])
 			path_val = kwargs[k][0] if len(kwargs[k]) == 1 else "varied"
-			print(kwargs, k, path_val)
 			output_path += f'{k}{path_val}_'
 	output_path += 'results.csv'
 	print(output_path)
@@ -487,6 +532,7 @@ def main(args):
 		_, _, beta, _, Sigma = knockadapt.graphs.sample_data(
 			**new_dgp_kwargs
 		)
+		print(beta)
 
 		# Create results
 		result = analyze_degen_solns(
