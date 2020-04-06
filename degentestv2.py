@@ -43,6 +43,15 @@ def str2bool(v):
 	else:
 		raise ValueError('Boolean value expected.')
 
+def obj2int(v):
+	try:
+		v = float(v)
+		if v.is_integer():
+			v = int(v)
+		return v
+	except: 
+		return v
+
 def val2list(val):
 	""" Turns discrete values into lists, otherwise returns """
 	if not (isinstance(val, list) or isinstance(val, np.ndarray)):
@@ -444,6 +453,8 @@ def parse_args(args):
 					# Strip brackets, whitspace, and split by commas
 					value = arg.replace('[', '').replace(']', '')
 					value = value.replace(' ', '').split(',')
+					# Try to process
+					value = [obj2int(v) for v in value]
 
 				# Check if it's start{num}end{num}numvals{num}
 				elif arg[0:5] == 'start':
