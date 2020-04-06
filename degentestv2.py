@@ -499,6 +499,11 @@ def main(args):
 	# Make sure pair_aggs is not being duplicated
 	if 'pair_agg' in fstat_kwargs:
 		raise ValueError("Many pair_aggs will be analyzed anyway. Do not add this as a fstat_kwarg.")
+	# Some common errors I make
+	if 'coeff_dist' in sample_kwargs:
+		raise ValueError("coeff_dist ought to be in dgp_kwargs")
+	if 'y_dist' in dgp_kwargs:
+		raise ValueError("y_dist ought to be in sample_kwargs")
 
 	# Parse some special non-graph kwargs
 	reps = fetch_kwarg(sample_kwargs, 'reps', default=[50])[0]
@@ -543,7 +548,6 @@ def main(args):
 		_, _, beta, _, Sigma = knockadapt.graphs.sample_data(
 			**new_dgp_kwargs
 		)
-		print(beta)
 
 		# Create results
 		result = analyze_degen_solns(
