@@ -233,6 +233,7 @@ def calc_power_and_fdr(
 	num_processes=1,
 	sample_kwargs={},
 	filter_kwargs={},
+	seed_start=0,
 ):
 	
 	# Fetch nonnulls
@@ -249,7 +250,7 @@ def calc_power_and_fdr(
 		filter_kwargs=filter_kwargs,
 	)
 	# (Possibly) apply multiprocessing
-	all_inputs = list(range(reps))
+	all_inputs = list(range(seed_start, seed_start+reps))
 	num_processes = min(len(all_inputs), num_processes)
 	all_outputs = apply_pool(
 		func = partial_sd_power_fdr,
@@ -275,6 +276,7 @@ def analyze_degen_solns(
 	q=0.2,
 	reps=50,
 	num_processes=5,
+	seed_start=0,
 	):
 	"""
 	:param sample_kwargs: 
@@ -371,6 +373,7 @@ def analyze_degen_solns(
 						num_processes=num_processes,
 						sample_kwargs=new_sample_kwargs,
 						filter_kwargs=new_filter_kwargs,
+						seed_start=seed_start,
 					)
 					# Loop through antisymmetric functions
 					for agg in out:
@@ -408,6 +411,7 @@ def parse_args(args):
 	args = args[1:]
 
 	# Initialize kwargs constructor
+	special_keys = ['reps', 'num_processes', 'seed_start']
 	key_types = ['dgp', 'sample', 'filter', 'fstat']
 	all_kwargs = {ktype:{} for ktype in key_types}
 	key = None
@@ -426,7 +430,7 @@ def parse_args(args):
 			key = arg[2:]
 
 			# Check what type of keyword
-			if key in ['reps', 'num_processes']:
+			if key in special_keys:
 				key_type = 'sample'
 			else:
 				key_split = key.split('_')
@@ -508,6 +512,7 @@ def main(args):
 	# Parse some special non-graph kwargs
 	reps = fetch_kwarg(sample_kwargs, 'reps', default=[50])[0]
 	num_processes = fetch_kwarg(sample_kwargs, 'num_processes', default=[5])[0]
+	seed_start = fetch_kwarg(sample_kwargs, 'seed_start', default=[0])[0]
 	print(f"DGP kwargs are {dgp_kwargs}")
 	print(f"Sample kwargs are {sample_kwargs}")
 	print(f"Filter kwargs are {filter_kwargs}")
@@ -515,17 +520,21 @@ def main(args):
 
 
 	# Create output path
-	output_dir = 'data/degentestv2/'
-	if not os.path.exists(output_dir):
-		os.makedirs(output_dir)
-	output_path = output_dir
-	for kwargs in [dgp_kwargs,sample_kwargs, filter_kwargs]:
+	output_path = 'data/degentestv2/'
+	all_key_types = ['dgp', 'sample', 'filter', 'fstat']
+	all_kwargs = [dgp_kwargs,sample_kwargs, filter_kwargs, fstat_kwargs]
+
+	for key_type,kwargs in zip(all_key_types, all_kwargs):
+		output_path += f'/{key_type}_'
 		keys = sorted([k for k in kwargs])
 		for k in keys:
 			path_val = kwargs[k][0] if len(kwargs[k]) == 1 else "varied"
 			output_path += f'{k}{path_val}_'
-	output_path += 'results.csv'
-	print(output_path)
+	output_path += f'seedstart{seed_start}_reps{reps}_results.csv'
+	output_dir = os.path.dirname(output_path)
+	if not os.path.exists(output_dir):
+		os.makedirs(output_dir)
+
 
 	# Initialize final final output
 	all_results = pd.DataFrame()
@@ -560,6 +569,7 @@ def main(args):
 			q=0.2,
 			reps=reps,
 			num_processes=num_processes,
+			seed_start=seed_start,
 		)
 		for key in dgp_keys:
 			result[key] = new_dgp_kwargs[key]
