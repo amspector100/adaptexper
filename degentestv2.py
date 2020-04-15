@@ -159,21 +159,22 @@ def selection2power(selections, group_nonnulls):
 	fdp = fdp/max(1, np.sum(selections))
 	power = power/max(1, np.sum(group_nonnulls))
 
-	return (power, fdp)
+	return [power, fdp]
 
 def single_dataset_power_fdr(
 	seed,
 	Sigma,
 	beta,
 	groups,
-	S,
 	q=0.2,
 	normalize=True,
 	sample_kwargs={},
 	filter_kwargs={
 		'feature_stat_kwargs':{},
+		'knockoff_kwargs':{},
 	},
 ):
+	""" Knockoff kwargs should be included in filter_kwargs """
 
 	# Fetch groups
 	p = Sigma.shape[0]
@@ -199,13 +200,15 @@ def single_dataset_power_fdr(
 		y=y, 
 		Sigma=Sigma, 
 		groups=groups,
-		knockoff_kwargs={'S':S, 'verbose':False},
 		fdr=q,
 		**filter_kwargs
 	)
 	Z = mxfilter.Z
+	score = mxfilter.score
+	score_type = mxfilter.score_type
 
-	# Calculate power/fdp for a variety of 
+
+	# Calculate power/fdp/score for a variety of 
 	# antisymmetric functions
 	output = {}
 	for pair_agg in PAIR_AGGS:
@@ -220,13 +223,13 @@ def single_dataset_power_fdr(
 		output[pair_agg] = selection2power(
 			selections, group_nonnulls
 		)
+		output[pair_agg].extend([score, score_type])
 
 	return output
 
 def calc_power_and_fdr(
 	Sigma,
 	beta,
-	S,
 	groups=None,
 	q=0.2,
 	reps=100,
@@ -244,7 +247,6 @@ def calc_power_and_fdr(
 		Sigma=Sigma,
 		beta=beta,
 		groups=groups,
-		S=S,
 		q=q, 
 		sample_kwargs=sample_kwargs,
 		filter_kwargs=filter_kwargs,
@@ -262,7 +264,9 @@ def calc_power_and_fdr(
 	for agg in PAIR_AGGS:
 		powers = np.array([x[agg][0] for x in all_outputs])
 		fdps = np.array([x[agg][1] for x in all_outputs])
-		final_out[agg] = (powers, fdps)
+		scores = np.array([x[agg][2] for x in all_outputs])
+		score_types = [x[agg][3] for x in all_outputs]
+		final_out[agg] = (powers, fdps, scores, score_types)
 
 	return final_out
 
@@ -304,7 +308,7 @@ def analyze_degen_solns(
 
 	# Initialize final output
 	counter = 0
-	columns = ['power', 'fdp', 'S_method', 'antisym'] 
+	columns = ['power', 'fdp', 'S_method', 'antisym', 'score', 'score_type'] 
 	columns += sample_keys + filter_keys + fstat_keys
 	result_df = pd.DataFrame(columns=columns)
 
@@ -320,8 +324,8 @@ def analyze_degen_solns(
 
 		# In high dimensional cases or binomial cases,
 		# don't fit OLS.
-		if 'feature_stat_fn' in new_filter_kwargs:
-			if new_filter_kwargs['feature_stat_fn'] == 'ols':
+		if 'feature_stat' in new_filter_kwargs:
+			if new_filter_kwargs['feature_stat'] == 'ols':
 				ols_flag = True
 			else:
 				ols_flag = False
@@ -359,14 +363,27 @@ def analyze_degen_solns(
 					new_filter_kwargs['feature_stat_kwargs'] = new_fstat_kwargs
 
 				# Loop through competitor methods
+				degen_flag = 'sdp_perturbed' in S_matrices 
 				for S_method in S_matrices:
 
-					# Power/FDP for the method
+					# Pull S matrix
 					S = S_matrices[S_method]
+
+					# If the method produces denerate knockoffs,
+					# signal this as part of the filter kwargs
+					_sdp_degen = (degen_flag and S_method == 'sdp')
+
+					# Create knockoff_kwargs
+					new_filter_kwargs['knockoff_kwargs'] = {
+						'S':S,
+						'verbose':False,
+						'_sdp_degen':_sdp_degen,
+					}
+
+					# Power/FDP for the method
 					out = calc_power_and_fdr(
 						Sigma=Sigma,
 						beta=beta,
-						S=S,
 						groups=groups,
 						q=q,
 						reps=reps,
@@ -377,9 +394,9 @@ def analyze_degen_solns(
 					)
 					# Loop through antisymmetric functions
 					for agg in out:
-						powers, fdps = out[agg]
-						for power, fdp in zip(powers, fdps):
-							row = [power, fdp, S_method, agg] 
+						powers, fdps, scores, score_types = out[agg]
+						for power, fdp, score, score_type in zip(powers, fdps, scores, score_types):
+							row = [power, fdp, S_method, agg, score, score_type] 
 							row += sample_vals + filter_vals + fstat_vals
 							result_df.loc[counter] = row 
 							counter += 1
@@ -442,6 +459,10 @@ def parse_args(args):
 				raise ValueError(
 					f'{i}th arg ({arg}) has key_type {key_type}, must be one of {key_types}'
 				)
+
+			# Friendly reminder
+			if key == 'feature_stat_fn':
+				raise ValueError("feature_stat_fn is depreciated, use feature_stat")
 
 		# Parse values
 		if i % 2 == 1:
@@ -534,6 +555,7 @@ def main(args):
 	output_dir = os.path.dirname(output_path)
 	if not os.path.exists(output_dir):
 		os.makedirs(output_dir)
+	print(f"Output path is {output_path}")
 
 
 	# Initialize final final output
@@ -557,7 +579,6 @@ def main(args):
 		_, _, beta, _, Sigma = knockadapt.graphs.sample_data(
 			**new_dgp_kwargs
 		)
-
 		# Create results
 		result = analyze_degen_solns(
 			Sigma,
