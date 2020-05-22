@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import datetime
 try:
 	import knockadapt
 except ImportError:
@@ -23,7 +24,7 @@ from multiprocessing import Pool
 from functools import partial
 
 # Global: the set of antisymmetric functions we use
-PAIR_AGGS = ['cd', 'sm', 'scd']
+PAIR_AGGS = ['cd', 'sm']#, 'scd']
 
 def fetch_kwarg(kwargs, key, default=None):
 	""" Utility function for parsing """
@@ -148,7 +149,7 @@ def Z2selections(Z, groups, q, **kwargs):
 	# Calculate selections 
 	T = kstats.data_dependent_threshhold(W=W, fdr=q)
 	selected_flags = (W >= T).astype("float32")
-	return selected_flags
+	return selected_flags, W
 
 def selection2power(selections, group_nonnulls):
 	# Calculate fdp, power
@@ -213,18 +214,29 @@ def single_dataset_power_fdr(
 	output = {}
 	for pair_agg in PAIR_AGGS:
 		# Start by creating selections
-		selections = Z2selections(
+		selections, W = Z2selections(
 			Z=Z,
 			groups=groups,
 			q=q,
 			pair_agg=pair_agg
 		)
 		# Then create power/fdp
-		output[pair_agg] = selection2power(
+		power, fdp = selection2power(
 			selections, group_nonnulls
 		)
-		output[pair_agg].extend([score, score_type])
+		output[pair_agg] = [
+			power,
+			fdp,
+			score, 
+			score_type,
+			np.around(W, 4),
+			np.around(Z[0:p], 4),
+			np.around(Z[p:], 4),
+			selections,
+			seed
+		]
 
+	# Output: dict mapping pair_agg to [power, fdp, score, score_type, W, selection]
 	return output
 
 def calc_power_and_fdr(
@@ -262,17 +274,18 @@ def calc_power_and_fdr(
 	# Extract output and return
 	final_out = {}
 	for agg in PAIR_AGGS:
-		powers = np.array([x[agg][0] for x in all_outputs])
-		fdps = np.array([x[agg][1] for x in all_outputs])
-		scores = np.array([x[agg][2] for x in all_outputs])
-		score_types = [x[agg][3] for x in all_outputs]
-		final_out[agg] = (powers, fdps, scores, score_types)
+		final_out[agg] = []
+		for j in range(len(all_outputs[0][agg])):
+			final_out[agg].append(
+				np.array([x[agg][j] for x in all_outputs])
+			)
 
 	return final_out
 
 def analyze_degen_solns(
 	Sigma,
 	beta,
+	beta_number,
 	groups=None,
 	sample_kwargs={},
 	filter_kwargs={},
@@ -283,6 +296,8 @@ def analyze_degen_solns(
 	seed_start=0,
 	):
 	"""
+	:param beta_number: A number corresponding to which beta
+	each row corresponds to.
 	:param sample_kwargs: 
 	A dictionary. Each key is a sample parameter name, with the value
 	being either a single value or a list or array of values. 
@@ -308,8 +323,13 @@ def analyze_degen_solns(
 
 	# Initialize final output
 	counter = 0
-	columns = ['power', 'fdp', 'S_method', 'antisym', 'score', 'score_type'] 
-	columns += sample_keys + filter_keys + fstat_keys
+	columns = ['power', 'fdp', 'S_method', 'antisym', 'score', 'score_type']
+	columns += [f'W{i}' for i in range(1, p+1)]
+	columns += [f'Z{i}' for i in range(1, p+1)]
+	columns += [f'tildeZ{i}' for i in range(1, p+1)]
+	columns += [f'selection{i}' for i in range(1, p+1)] 
+	columns += ['beta_number']
+	columns += sample_keys + filter_keys + fstat_keys + ['seed']
 	result_df = pd.DataFrame(columns=columns)
 
 	# Create competitor S-matrices
@@ -394,10 +414,14 @@ def analyze_degen_solns(
 					)
 					# Loop through antisymmetric functions
 					for agg in out:
-						powers, fdps, scores, score_types = out[agg]
-						for power, fdp, score, score_type in zip(powers, fdps, scores, score_types):
+						for power, fdp, score, score_type, W, Z, tildeZ, selections, seed in zip(*out[agg]):
 							row = [power, fdp, S_method, agg, score, score_type] 
-							row += sample_vals + filter_vals + fstat_vals
+							row.extend(W.tolist())
+							row.extend(Z.tolist())
+							row.extend(tildeZ.tolist())
+							row.extend(selections.astype(np.int32).tolist())
+							row += [beta_number]
+							row += sample_vals + filter_vals + fstat_vals + [seed]
 							result_df.loc[counter] = row 
 							counter += 1
 
@@ -428,11 +452,12 @@ def parse_args(args):
 	args = args[1:]
 
 	# Initialize kwargs constructor
-	special_keys = ['reps', 'num_processes', 'seed_start']
+	special_keys = ['reps', 'num_processes', 'seed_start', 'description']
 	key_types = ['dgp', 'sample', 'filter', 'fstat']
 	all_kwargs = {ktype:{} for ktype in key_types}
 	key = None
 	key_type = None # One of dgp, sample, filter
+	description_index = None # At the end, can write description
 
 	#Parse
 	for i, arg in enumerate(args):
@@ -463,6 +488,11 @@ def parse_args(args):
 			# Friendly reminder
 			if key == 'feature_stat_fn':
 				raise ValueError("feature_stat_fn is depreciated, use feature_stat")
+
+			# Description
+			if key == 'description':
+				description_index = i
+				break
 
 		# Parse values
 		if i % 2 == 1:
@@ -496,6 +526,13 @@ def parse_args(args):
 
 
 			all_kwargs[key_type][key] = val2list(value)
+
+	# Parse description 
+	description = ''
+	if description_index is not None:
+		description += (' ').join(args[description_index+1:])
+	description += f'\n \n Other arguments were: {args[0:description_index]}'
+	all_kwargs['sample']['description'] = description
 
 	out = (all_kwargs[key_type] for key_type in key_types)
 	return out
@@ -534,14 +571,19 @@ def main(args):
 	reps = fetch_kwarg(sample_kwargs, 'reps', default=[50])[0]
 	num_processes = fetch_kwarg(sample_kwargs, 'num_processes', default=[5])[0]
 	seed_start = fetch_kwarg(sample_kwargs, 'seed_start', default=[0])[0]
+	description = fetch_kwarg(sample_kwargs, 'description', default='')
 	print(f"DGP kwargs are {dgp_kwargs}")
 	print(f"Sample kwargs are {sample_kwargs}")
 	print(f"Filter kwargs are {filter_kwargs}")
-	print(f"fstat kwargs are {fstat_kwargs}")
+	print(f"Ftat kwargs are {fstat_kwargs}")
+	print(f"Description is {description.split('Other arguments were:')[0]}")
 
 
-	# Create output path
-	output_path = 'data/degentestv2/'
+	# Create output paths
+	today = str(datetime.date.today())
+	hour = str(datetime.datetime.today().time())
+	hour = hour.replace(':','-').split('.')[0]
+	output_path = f'data/degentestv2/{today}/{hour}'
 	all_key_types = ['dgp', 'sample', 'filter', 'fstat']
 	all_kwargs = [dgp_kwargs,sample_kwargs, filter_kwargs, fstat_kwargs]
 
@@ -549,13 +591,21 @@ def main(args):
 		output_path += f'/{key_type}_'
 		keys = sorted([k for k in kwargs])
 		for k in keys:
-			path_val = kwargs[k][0] if len(kwargs[k]) == 1 else "varied"
+			path_val = kwargs[k][0] if len(kwargs[k]) == 1 else ('').join(str(kwargs[k]).split(' '))
 			output_path += f'{k}{path_val}_'
+
+	# Put it all together and ensure directory exists
 	output_path += f'seedstart{seed_start}_reps{reps}_results.csv'
+	beta_path = output_path.split('.csv')[0] + '_betas.csv'
+	description_path = f'data/degentestv2/{today}/{hour}/' + 'description.txt'
 	output_dir = os.path.dirname(output_path)
 	if not os.path.exists(output_dir):
 		os.makedirs(output_dir)
 	print(f"Output path is {output_path}")
+
+	# Save description
+	with open(description_path, 'w') as thefile:
+		thefile.write(description)	
 
 
 	# Initialize final final output
@@ -569,6 +619,19 @@ def main(args):
 		dgp_components.append(dgp_kwargs[key])
 	dgp_product = itertools.product(*dgp_components)
 
+	# p sadly does need to have 1 value for a variety of reasons 
+	if 'p' in dgp_kwargs:
+		if len(dgp_kwargs['p']) > 1:
+			raise ValueError(f"Must have only one value of p, not {dgp_kwarys[p]}")
+		else:
+			p = dgp_kwargs['p'][0]
+	else:
+		p = 50
+	beta_number = 0
+	beta_df = pd.DataFrame(columns=np.arange(1,p+1,1))
+	beta_df.index.name = 'beta_number'
+	
+
 	for dgp_vals in dgp_product:
 
 		# Create DGP using dgp kwargs
@@ -579,10 +642,16 @@ def main(args):
 		_, _, beta, _, Sigma = knockadapt.graphs.sample_data(
 			**new_dgp_kwargs
 		)
+
+		# Cache beta
+		beta_df.loc[beta_number] = beta
+		beta_df.to_csv(beta_path)
+
 		# Create results
 		result = analyze_degen_solns(
 			Sigma,
 			beta,
+			beta_number,
 			groups=None,
 			sample_kwargs=sample_kwargs,
 			filter_kwargs=filter_kwargs,
@@ -594,12 +663,13 @@ def main(args):
 		)
 		for key in dgp_keys:
 			result[key] = new_dgp_kwargs[key]
-		print(result)
 		all_results = all_results.append(
 			result, 
 			ignore_index = True
 		)
 		all_results.to_csv(output_path)
+
+		beta_number += 1
 
 	return all_results
 
