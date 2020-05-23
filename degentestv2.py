@@ -285,7 +285,7 @@ def calc_power_and_fdr(
 def analyze_degen_solns(
 	Sigma,
 	beta,
-	beta_number,
+	dgp_number,
 	groups=None,
 	sample_kwargs={},
 	filter_kwargs={},
@@ -296,7 +296,7 @@ def analyze_degen_solns(
 	seed_start=0,
 	):
 	"""
-	:param beta_number: A number corresponding to which beta
+	:param dgp_number: A number corresponding to which dgp
 	each row corresponds to.
 	:param sample_kwargs: 
 	A dictionary. Each key is a sample parameter name, with the value
@@ -328,7 +328,7 @@ def analyze_degen_solns(
 	columns += [f'Z{i}' for i in range(1, p+1)]
 	columns += [f'tildeZ{i}' for i in range(1, p+1)]
 	columns += [f'selection{i}' for i in range(1, p+1)] 
-	columns += ['beta_number']
+	columns += ['dgp_number']
 	columns += sample_keys + filter_keys + fstat_keys + ['seed']
 	result_df = pd.DataFrame(columns=columns)
 
@@ -420,12 +420,12 @@ def analyze_degen_solns(
 							row.extend(Z.tolist())
 							row.extend(tildeZ.tolist())
 							row.extend(selections.astype(np.int32).tolist())
-							row += [beta_number]
+							row += [dgp_number]
 							row += sample_vals + filter_vals + fstat_vals + [seed]
 							result_df.loc[counter] = row 
 							counter += 1
 
-	return result_df
+	return result_df, S_matrices
 
 def parse_args(args):
 	""" Homemade argument parser 
@@ -583,7 +583,7 @@ def main(args):
 	today = str(datetime.date.today())
 	hour = str(datetime.datetime.today().time())
 	hour = hour.replace(':','-').split('.')[0]
-	output_path = f'data/degentestv2/{today}/{hour}'
+	output_path = f'data/degentestv3/{today}/{hour}'
 	all_key_types = ['dgp', 'sample', 'filter', 'fstat']
 	all_kwargs = [dgp_kwargs,sample_kwargs, filter_kwargs, fstat_kwargs]
 
@@ -591,13 +591,14 @@ def main(args):
 		output_path += f'/{key_type}_'
 		keys = sorted([k for k in kwargs])
 		for k in keys:
-			path_val = kwargs[k][0] if len(kwargs[k]) == 1 else ('').join(str(kwargs[k]).split(' '))
+			path_val = ('').join(str(kwargs[k]).split(' '))
 			output_path += f'{k}{path_val}_'
 
 	# Put it all together and ensure directory exists
 	output_path += f'seedstart{seed_start}_reps{reps}_results.csv'
 	beta_path = output_path.split('.csv')[0] + '_betas.csv'
-	description_path = f'data/degentestv2/{today}/{hour}/' + 'description.txt'
+	S_path = output_path.split('.csv')[0] + '_S.csv'
+	description_path = f'data/degentestv3/{today}/{hour}/' + 'description.txt'
 	output_dir = os.path.dirname(output_path)
 	if not os.path.exists(output_dir):
 		os.makedirs(output_dir)
@@ -627,10 +628,17 @@ def main(args):
 			p = dgp_kwargs['p'][0]
 	else:
 		p = 50
-	beta_number = 0
-	beta_df = pd.DataFrame(columns=np.arange(1,p+1,1))
-	beta_df.index.name = 'beta_number'
-	
+
+	# Initialize ways to save beta, dgp
+	dgp_number = 0
+	beta_df = pd.DataFrame(columns=np.arange(1, p+1, 1))
+	beta_df.index.name = 'dgp_number'
+	# Stores diagonal of S
+	S_diags_df = pd.DataFrame(
+		columns = ['dgp_number', 'S_method'] + [i for i in range(1, p+1)]
+	) 
+	S_counter = 0
+
 
 	for dgp_vals in dgp_product:
 
@@ -644,14 +652,14 @@ def main(args):
 		)
 
 		# Cache beta
-		beta_df.loc[beta_number] = beta
+		beta_df.loc[dgp_number] = beta
 		beta_df.to_csv(beta_path)
 
 		# Create results
-		result = analyze_degen_solns(
+		result, S_matrices = analyze_degen_solns(
 			Sigma,
 			beta,
-			beta_number,
+			dgp_number,
 			groups=None,
 			sample_kwargs=sample_kwargs,
 			filter_kwargs=filter_kwargs,
@@ -669,7 +677,15 @@ def main(args):
 		)
 		all_results.to_csv(output_path)
 
-		beta_number += 1
+		# Cache S outputs
+		for S_method in S_matrices:
+			S_diag = np.diag(S_matrices[S_method])
+			S_diags_df.loc[S_counter] = [dgp_number, S_method] + S_diag.tolist()
+			S_counter += 1
+		S_diags_df.to_csv(S_path)
+
+		# Increment dgp number
+		dgp_number += 1
 
 	return all_results
 
