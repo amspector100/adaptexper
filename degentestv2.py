@@ -345,12 +345,9 @@ def analyze_degen_solns(
 		# In high dimensional cases or binomial cases,
 		# don't fit OLS.
 		if 'feature_stat' in new_filter_kwargs:
-			if new_filter_kwargs['feature_stat'] == 'ols':
-				ols_flag = True
-			else:
-				ols_flag = False
+			fstat = new_filter_kwargs['feature_stat']
 		else:
-			ols_flag = False
+			fstat = 'lasso'
 
 		for sample_vals in sample_product:
 			sample_vals = list(sample_vals)
@@ -359,7 +356,7 @@ def analyze_degen_solns(
 			}
 
 			# Don't run OLS in certain cases
-			if ols_flag:
+			if fstat == 'ols':
 				if new_sample_kwargs['n'] < 2*new_sample_kwargs['p']:
 					continue
 				if 'y_dist' in new_sample_kwargs:
