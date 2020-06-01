@@ -37,12 +37,12 @@ def str2bool(v):
 	""" Helper function, converts strings to boolean vals""" 
 	if isinstance(v, bool):
 		return v
-	if v.lower() in ('yes', 'true', 't', 'y', '1'):
-		return True
-	elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-		return False
-	else:
-		raise ValueError('Boolean value expected.')
+	elif isinstance(v, str):
+		if v.lower() in ['yes', 'true', 't', 'y', '1']:
+			return True
+		elif v.lower() in ['no', 'false', 'f', 'n', '0']:
+			return False
+	return v
 
 def obj2int(v):
 	try:
@@ -51,7 +51,7 @@ def obj2int(v):
 			v = int(v)
 		return v
 	except: 
-		return v
+		return str2bool(v)
 
 def val2list(val):
 	""" Turns discrete values into lists, otherwise returns """
@@ -88,6 +88,7 @@ def apply_pool(func, all_inputs, num_processes):
 def fetch_competitor_S(
 	Sigma,
 	groups,
+	time0,
 ):
 
 	### Special case: detect if Sigma is equicorrelated,
@@ -116,7 +117,9 @@ def fetch_competitor_S(
 
 
 
-	### Calculate (A)SDP S-matrix 
+	### Calculate (A)SDP S-matrix
+	if time0 is None:
+		time0 = time.time() 
 	if p <= 1000:
 		print(f'Computing SDP S matrix, time is {time.time() - time0}')
 		S_SDP = knockadapt.knockoffs.solve_group_SDP(Sigma, groups=groups)
@@ -294,6 +297,7 @@ def analyze_degen_solns(
 	reps=50,
 	num_processes=5,
 	seed_start=0,
+	time0=None,
 	):
 	"""
 	:param dgp_number: A number corresponding to which dgp
@@ -333,7 +337,7 @@ def analyze_degen_solns(
 	result_df = pd.DataFrame(columns=columns)
 
 	# Create competitor S-matrices
-	S_matrices = fetch_competitor_S(Sigma, groups)
+	S_matrices = fetch_competitor_S(Sigma, groups,time0=time0)
 
 	### Calculate power of knockoffs for the two different methods
 	for filter_vals in filter_product:
@@ -443,6 +447,9 @@ def parse_args(args):
 	Note that "reps" and "num_processes" are special kwargs.
 	They get placed as sample_kwargs by default but will be
 	extracted.
+
+	The --description argument must be the last argument, as 
+	all arguments after the --description argument will be ignored.
 	"""
 	
 	# Get rid of script name
@@ -493,33 +500,27 @@ def parse_args(args):
 
 		# Parse values
 		if i % 2 == 1:
-			# Try to parse this as float/int
-			try:
-				value = float(arg)
-				if value.is_integer():
-					value = int(value)
-			# Try to parse this as a list of values
-			except:
-				# Check if it's a list written out
-				if arg[0] == '[':
-					# Strip brackets, whitspace, and split by commas
-					value = arg.replace('[', '').replace(']', '')
-					value = value.replace(' ', '').split(',')
-					# Try to process
-					value = [obj2int(v) for v in value]
 
-				# Check if it's start{num}end{num}numvals{num}
-				elif arg[0:5] == 'start':
-					start = float(arg.replace('start', '').split('end')[0])
-					end = float(arg.split('end')[-1].split('numvals')[0])
-					numvals = int(arg.split('numvals')[-1])
-					value = np.linspace(
-						start, end, numvals
-					)
+			# Check if it's a list written out
+			if arg[0] == '[':
+				# Strip brackets, whitspace, and split by commas
+				value = arg.replace('[', '').replace(']', '')
+				value = value.replace(' ', '').split(',')
+				# Try to process
+				value = [obj2int(v) for v in value]
 
-				# If all else fails, it's a string!
-				else:
-					value = arg
+			# Check if it's start{num}end{num}numvals{num}
+			elif arg[0:5] == 'start':
+				start = float(arg.replace('start', '').split('end')[0])
+				end = float(arg.split('end')[-1].split('numvals')[0])
+				numvals = int(arg.split('numvals')[-1])
+				value = np.linspace(
+					start, end, numvals
+				)
+
+			# Apply obj2int (preserves strings, infers floats, bools, ints)
+			else:
+				value = obj2int(arg)
 
 
 			all_kwargs[key_type][key] = val2list(value)
@@ -665,6 +666,7 @@ def main(args):
 			reps=reps,
 			num_processes=num_processes,
 			seed_start=seed_start,
+			time0=time0
 		)
 		for key in dgp_keys:
 			result[key] = new_dgp_kwargs[key]
