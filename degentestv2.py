@@ -199,7 +199,7 @@ def single_dataset_power_fdr(
 
 	# Some updates for fixedX knockoffs
 	# and MX knockoffs with parametrization
-	fixedX = fetch_kwarg(filter_kwargs, 'fixedX', default=False)
+	fixedX = fetch_kwarg(filter_kwargs, 'fixedx', default=False)
 	infer_sigma = fetch_kwarg(filter_kwargs, 'infer_sigma', default=False)
 	if fixedX or infer_sigma:
 		Sigma = None
@@ -366,8 +366,8 @@ def analyze_degen_solns(
 	# Check if we are going to ever fit MX knockoffs on the
 	# "ground truth" covariance matrix. If so, we'll memoize
 	# the SDP/MCV results.
-	if 'fixedX' in filter_kwargs:
-		fixedX_vals = filter_kwargs['fixedX']
+	if 'fixedx' in filter_kwargs:
+		fixedX_vals = filter_kwargs['fixedx']
 		if False in fixedX_vals:
 			MX_flag = True
 		else:
