@@ -13,7 +13,7 @@ except ImportError:
 	sys.path.insert(0, os.path.abspath(knockoff_directory))
 	import knockadapt
 from knockadapt import knockoff_stats as kstats
-from knockadapt.knockoff_filter import MXKnockoffFilter
+from knockadapt.knockoff_filter import KnockoffFilter
 
 import warnings
 import numpy as np
@@ -120,7 +120,7 @@ def fetch_competitor_S(
 	### Calculate (A)SDP S-matrix
 	if time0 is None:
 		time0 = time.time() 
-	if p <= 1000:
+	if p <= 500:
 		print(f'Computing SDP S matrix, time is {time.time() - time0}')
 		S_SDP = knockadapt.knockoffs.solve_group_SDP(Sigma, groups=groups)
 	else:
@@ -188,7 +188,8 @@ def single_dataset_power_fdr(
 		beta, groups
 	)
 
-	# Sample data
+	# Sample data, record time
+	localtime = time.time()
 	np.random.seed(seed)
 	X, y, _, _, _ = knockadapt.graphs.sample_data(
 		corr_matrix=Sigma,
@@ -196,20 +197,30 @@ def single_dataset_power_fdr(
 		**sample_kwargs
 	)
 
+	# Some updates for fixedX knockoffs
+	# and MX knockoffs with parametrization
+	fixedX = fetch_kwarg(filter_kwargs, 'fixedX', default=False)
+	infer_sigma = fetch_kwarg(filter_kwargs, 'infer_sigma', default=False)
+	if fixedX or infer_sigma:
+		Sigma = None
+		if 'S' in filter_kwargs['knockoff_kwargs']:
+			filter_kwargs['knockoff_kwargs'].pop('S')
+
 	# Run MX knockoff filter to obtain
 	# Z statistics
-	mxfilter = MXKnockoffFilter()
-	mxfilter.forward(
+	knockoff_filter = KnockoffFilter(fixedX=fixedX)
+	knockoff_filter.forward(
 		X=X, 
 		y=y, 
+		mu=np.zeros(p),
 		Sigma=Sigma, 
 		groups=groups,
 		fdr=q,
 		**filter_kwargs
 	)
-	Z = mxfilter.Z
-	score = mxfilter.score
-	score_type = mxfilter.score_type
+	Z = knockoff_filter.Z
+	score = knockoff_filter.score
+	score_type = knockoff_filter.score_type
 
 
 	# Calculate power/fdp/score for a variety of 
@@ -239,10 +250,22 @@ def single_dataset_power_fdr(
 			seed
 		]
 
+	# Possibly log progress
+	try:
+		if seed % 10 == 0 and sample_kwargs['n'] == MAXIMUM_N:
+			overall_cost = time.time() - time0
+			local_cost = time.time() - localtime
+			S_method = filter_kwargs['knockoff_kwargs']['method']
+			print(f"Finished one {S_method} seed {seed}, took {local_cost} per seed, {overall_cost} total")
+	except:
+		# In notebooks this will error
+		pass
+
 	# Output: dict mapping pair_agg to [power, fdp, score, score_type, W, selection]
 	return output
 
 def calc_power_and_fdr(
+	time0,
 	Sigma,
 	beta,
 	groups=None,
@@ -253,7 +276,7 @@ def calc_power_and_fdr(
 	filter_kwargs={},
 	seed_start=0,
 ):
-	
+
 	# Fetch nonnulls
 	p = Sigma.shape[0]
 	# Sample data reps times and calc power/fdp
@@ -309,6 +332,7 @@ def analyze_degen_solns(
 	A dictionary. Each key is a mx_filter parameter name, with the value
 	being either a single value or a list or array of values. 
 	"""
+	global MAXIMUM_N # A hack to allow for better logging
 	
 	# Infer p and set n defaults
 	p = Sigma.shape[0]
@@ -317,6 +341,7 @@ def analyze_degen_solns(
 		sample_kwargs['n'] = [
 			int(p/4), int(p/2), int(p/1.5), int(p), int(2*p), int(4*p)
 		]
+	MAXIMUM_N = max(sample_kwargs['n']) # Helpful for logging
 	if groups is None:
 		groups = np.arange(1, p+1, 1)
 
@@ -336,8 +361,33 @@ def analyze_degen_solns(
 	columns += sample_keys + filter_keys + fstat_keys + ['seed']
 	result_df = pd.DataFrame(columns=columns)
 
-	# Create competitor S-matrices
-	S_matrices = fetch_competitor_S(Sigma, groups,time0=time0)
+	# Create competitor S-matrices in the non-FX/infer_sigma case
+	
+	# Check if we are going to ever fit MX knockoffs on the
+	# "ground truth" covariance matrix. If so, we'll memoize
+	# the SDP/MCV results.
+	if 'fixedX' in filter_kwargs:
+		fixedX_vals = filter_kwargs['fixedX']
+		if False in fixedX_vals:
+			MX_flag = True
+		else:
+			MX_flag = False
+	else:
+		MX_flag = True
+	if 'infer_sigma' in filter_kwargs:
+		infer_sigma_vals = filter_kwargs['infer_sigma']
+		if False in infer_sigma_vals:
+			ground_truth = True
+		else:
+			ground_truth = False
+	else:
+		ground_truth = True
+	if ground_truth and MX_flag:
+		print(f"Storing SDP/MCV results")
+		S_matrices = fetch_competitor_S(Sigma, groups,time0=time0)
+	else:
+		print(f"Not storing SDP/MCV results")
+		S_matrices = {'sdp':None, 'mcv':None}
 
 	### Calculate power of knockoffs for the two different methods
 	for filter_vals in filter_product:
@@ -396,9 +446,11 @@ def analyze_degen_solns(
 
 					# Create knockoff_kwargs
 					new_filter_kwargs['knockoff_kwargs'] = {
+						'method':S_method,
 						'S':S,
 						'verbose':False,
 						'_sdp_degen':_sdp_degen,
+						'max_epochs':100,
 					}
 
 					# Power/FDP for the method
@@ -412,6 +464,7 @@ def analyze_degen_solns(
 						sample_kwargs=new_sample_kwargs,
 						filter_kwargs=new_filter_kwargs,
 						seed_start=seed_start,
+						time0=time0,
 					)
 					# Loop through antisymmetric functions
 					for agg in out:
@@ -551,7 +604,6 @@ def main(args):
 	matrix. The same goes for filter_kwargs abd fstat_kwargs.
 	"""
 
-
 	# Create kwargs
 	dgp_kwargs, sample_kwargs, filter_kwargs, fstat_kwargs = parse_args(args)
 	print(f"Args were {args}")
@@ -625,7 +677,7 @@ def main(args):
 		else:
 			p = dgp_kwargs['p'][0]
 	else:
-		p = 50
+		p = 100
 
 	# Initialize ways to save beta, dgp
 	dgp_number = 0
@@ -678,7 +730,10 @@ def main(args):
 
 		# Cache S outputs
 		for S_method in S_matrices:
-			S_diag = np.diag(S_matrices[S_method])
+			S = S_matrices[S_method]
+			if S is None:
+				continue
+			S_diag = np.diag(S)
 			S_diags_df.loc[S_counter] = [dgp_number, S_method] + S_diag.tolist()
 			S_counter += 1
 		S_diags_df.to_csv(S_path)
@@ -691,4 +746,5 @@ def main(args):
 if __name__ == '__main__':
 
 	time0 = time.time()
+	MAXIMUM_N = 0
 	main(sys.argv)
