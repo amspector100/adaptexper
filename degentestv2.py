@@ -139,17 +139,17 @@ def fetch_competitor_S(
 		groups=groups,
 		init_S=S_SDP,
 	)
-	S_FKTP = opt.optimize(max_epochs=100)
+	S_MCV = opt.optimize(max_epochs=100)
 	opt_smooth = knockadapt.nonconvex_sdp.NonconvexSDPSolver(
 		Sigma=Sigma,
 		groups=groups,
 		init_S=S_SDP,
-		smoothing=0.01,
+		smoothing=0.001,
 	)
-	S_FKTP_smooth = opt_smooth.optimize(max_epochs=100)
+	S_MCV_smooth = opt_smooth.optimize(max_epochs=100)
 	print(f'Finished computing opt_S matrix, time is {time.time() - time0}')
 
-	return {'sdp':S_SDP, 'ftkp':S_FKTP}
+	return {'sdp':S_SDP, 'mcv':S_FKTP, 'mcv_smoothed':S_MCV_smooth}
 
 def Z2selections(Z, groups, q, **kwargs):
 	
