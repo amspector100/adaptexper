@@ -147,9 +147,9 @@ def fetch_competitor_S(
 		smoothing=0.001,
 	)
 	S_MCV_smooth = opt_smooth.optimize(max_epochs=100)
-	print(f'Finished computing opt_S matrix, time is {time.time() - time0}')
+	print(f'Finished computing opt_S matrices, time is {time.time() - time0}')
 
-	return {'sdp':S_SDP, 'mcv':S_FKTP, 'mcv_smoothed':S_MCV_smooth}
+	return {'sdp':S_SDP, 'mcv':S_MCV, 'mcv_smoothed':S_MCV_smooth}
 
 def Z2selections(Z, groups, q, **kwargs):
 	
