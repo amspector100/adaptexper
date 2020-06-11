@@ -130,7 +130,6 @@ def fetch_competitor_S(
 			Sigma=Sigma, 
 			groups=groups, 
 			max_block=500, 
-			num_processes=num_processes,
 		)
 	print(f'Finished computing S matrix, time is {time.time() - time0}')
 
@@ -455,7 +454,7 @@ def analyze_degen_solns(
 					_sdp_degen = (degen_flag and S_method == 'sdp')
 
 					if 'smooth' in str(S_method).lower():
-						smoothing = 0.01
+						smoothing = 0.01 # Change to 0.001?
 					else:
 						smoothing = 0
 
