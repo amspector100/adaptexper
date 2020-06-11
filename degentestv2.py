@@ -101,7 +101,6 @@ def fetch_competitor_S(
 		if np.all(Sigma==equicorr):
 			print(f"Sigma is equicorr (rho={rho}), using analytical solution")
 			S_SDP = min(1, 2-2*rho)*np.eye(p)
-			#scale_FKTP = (2-2*rho)*(p-np.sqrt(p**2 - p))
 			scale_FKTP = (1-rho)
 			S_FKTP = scale_FKTP*np.eye(p)
 			print(S_FKTP)
@@ -115,14 +114,16 @@ def fetch_competitor_S(
 				'ftkp':S_FKTP
 				}
 
-
-
 	### Calculate (A)SDP S-matrix
 	if time0 is None:
 		time0 = time.time() 
 	if p <= 500:
 		print(f'Computing SDP S matrix, time is {time.time() - time0}')
-		S_SDP = knockadapt.knockoffs.solve_group_SDP(Sigma, groups=groups)
+		S_SDP = knockadapt.knockoffs.solve_group_SDP(
+			Sigma,
+			groups=groups,
+			sdp_tol=1e-5
+		)
 	else:
 		print(f'Computing ASDP S matrix, time is {time.time() - time0}')
 		S_SDP = knockadapt.knockoffs.solve_group_ASDP(
@@ -140,6 +141,13 @@ def fetch_competitor_S(
 		init_S=S_SDP,
 	)
 	S_FKTP = opt.optimize(max_epochs=100)
+	opt_smooth = knockadapt.nonconvex_sdp.NonconvexSDPSolver(
+		Sigma=Sigma,
+		groups=groups,
+		init_S=S_SDP,
+		smoothing=0.01,
+	)
+	S_FKTP_smooth = opt_smooth.optimize(max_epochs=100)
 	print(f'Finished computing opt_S matrix, time is {time.time() - time0}')
 
 	return {'sdp':S_SDP, 'ftkp':S_FKTP}
@@ -341,6 +349,8 @@ def analyze_degen_solns(
 		sample_kwargs['n'] = [
 			int(p/4), int(p/2), int(p/1.5), int(p), int(2*p), int(4*p)
 		]
+	if not isinstance(sample_kwargs['n'], list):
+		sample_kwargs['n'] = [sample_kwargs['n']]
 	MAXIMUM_N = max(sample_kwargs['n']) # Helpful for logging
 	if groups is None:
 		groups = np.arange(1, p+1, 1)
@@ -387,7 +397,7 @@ def analyze_degen_solns(
 		S_matrices = fetch_competitor_S(Sigma, groups,time0=time0)
 	else:
 		print(f"Not storing SDP/MCV results")
-		S_matrices = {'sdp':None, 'mcv':None}
+		S_matrices = {'sdp':None, 'mcv':None, 'mcv_smoothed':None}
 
 	### Calculate power of knockoffs for the two different methods
 	for filter_vals in filter_product:
@@ -444,13 +454,19 @@ def analyze_degen_solns(
 					# signal this as part of the filter kwargs
 					_sdp_degen = (degen_flag and S_method == 'sdp')
 
+					if 'smooth' in str(S_method).lower():
+						smoothing = 0.01
+					else:
+						smoothing = 0
+
 					# Create knockoff_kwargs
 					new_filter_kwargs['knockoff_kwargs'] = {
-						'method':S_method,
+						'method':S_method.split('_')[0], # Split deals with _smoothed 
 						'S':S,
 						'verbose':False,
 						'_sdp_degen':_sdp_degen,
-						'max_epochs':100,
+						'max_epochs':150,
+						'smoothing':smoothing,
 					}
 
 					# Power/FDP for the method
