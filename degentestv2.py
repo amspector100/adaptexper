@@ -13,6 +13,7 @@ except ImportError:
 	sys.path.insert(0, os.path.abspath(knockoff_directory))
 	import knockadapt
 from knockadapt import knockoff_stats as kstats
+from knockadapt import utilities
 from knockadapt.knockoff_filter import KnockoffFilter
 
 import warnings
@@ -89,6 +90,8 @@ def fetch_competitor_S(
 	Sigma,
 	groups,
 	time0,
+	max_epochs=200,
+	verbose=False
 ):
 
 	### Special case: detect if Sigma is equicorrelated,
@@ -118,38 +121,54 @@ def fetch_competitor_S(
 	if time0 is None:
 		time0 = time.time() 
 	if p <= 500:
-		print(f'Computing SDP S matrix, time is {time.time() - time0}')
+		if verbose:
+			print(f'Computing SDP S matrix, time is {time.time() - time0}')
 		S_SDP = knockadapt.knockoffs.solve_group_SDP(
 			Sigma,
 			groups=groups,
 			sdp_tol=1e-5
 		)
 	else:
-		print(f'Computing ASDP S matrix, time is {time.time() - time0}')
+		if verbose:
+			print(f'Computing ASDP S matrix, time is {time.time() - time0}')
 		S_SDP = knockadapt.knockoffs.solve_group_ASDP(
 			Sigma=Sigma, 
 			groups=groups, 
 			max_block=500, 
 		)
-	print(f'Finished computing S matrix, time is {time.time() - time0}')
+	if verbose:
+		print(f'Finished computing S matrix, time is {time.time() - time0}')
 
 	### Calculate FTKP matrix (nonconvex solver)
-	opt = knockadapt.nonconvex_sdp.NonconvexSDPSolver(
-		Sigma=Sigma,
-		groups=groups,
-		init_S=S_SDP,
-	)
-	S_MCV = opt.optimize(max_epochs=100)
 	opt_smooth = knockadapt.nonconvex_sdp.NonconvexSDPSolver(
 		Sigma=Sigma,
 		groups=groups,
 		init_S=S_SDP,
 		smoothing=0.001,
 	)
-	S_MCV_smooth = opt_smooth.optimize(max_epochs=100)
-	print(f'Finished computing opt_S matrices, time is {time.time() - time0}')
+	S_MCV_smooth = opt_smooth.optimize(max_epochs=max_epochs)
+	opt = knockadapt.nonconvex_sdp.NonconvexSDPSolver(
+		Sigma=Sigma,
+		groups=groups,
+		init_S=S_MCV_smooth,
+	)
+	S_MCV = opt.optimize(max_epochs=max_epochs)
+	opt_smooth2 = knockadapt.nonconvex_sdp.NonconvexSDPSolver(
+		Sigma=Sigma,
+		groups=groups,
+		init_S=S_SDP,
+		smoothing=0.01,
+	)
+	S_MCV_smooth2 = opt_smooth.optimize(max_epochs=max_epochs)
+	if verbose:
+		print(f'Finished computing opt_S matrices, time is {time.time() - time0}')
 
-	return {'sdp':S_SDP, 'mcv':S_MCV, 'mcv_smoothed':S_MCV_smooth}
+	return {
+		'sdp':S_SDP, 
+		'mcv':S_MCV,
+		'mcv_smoothed_0.001':S_MCV_smooth,
+		'mcv_smoothed_0.01':S_MCV_smooth2
+	}
 
 def Z2selections(Z, groups, q, **kwargs):
 	
@@ -184,6 +203,8 @@ def single_dataset_power_fdr(
 		'feature_stat_kwargs':{},
 		'knockoff_kwargs':{},
 	},
+	S_matrices=None,
+	time0=None
 ):
 	""" Knockoff kwargs should be included in filter_kwargs """
 
@@ -205,70 +226,98 @@ def single_dataset_power_fdr(
 	)
 
 	# Some updates for fixedX knockoffs
-	# and MX knockoffs with parametrization
+	# and MX knockoffs without parametrization
 	fixedX = fetch_kwarg(filter_kwargs, 'fixedx', default=False)
 	infer_sigma = fetch_kwarg(filter_kwargs, 'infer_sigma', default=False)
-	if fixedX or infer_sigma:
-		Sigma = None
-		if 'S' in filter_kwargs['knockoff_kwargs']:
-			filter_kwargs['knockoff_kwargs'].pop('S')
 
-	# Run MX knockoff filter to obtain
-	# Z statistics
-	knockoff_filter = KnockoffFilter(fixedX=fixedX)
-	knockoff_filter.forward(
-		X=X, 
-		y=y, 
-		mu=np.zeros(p),
-		Sigma=Sigma, 
-		groups=groups,
-		fdr=q,
-		**filter_kwargs
-	)
-	Z = knockoff_filter.Z
-	score = knockoff_filter.score
-	score_type = knockoff_filter.score_type
+	# In particular, we want to calculate S matrices
+	# if we do not already know them.
+	if infer_sigma:
+		shrinkage = fetch_kwarg(filter_kwargs, 'shrinkage', default='ledoitwolf')
+		Sigma, _ = knockadapt.knockoffs.estimate_covariance(X, shrinkage=shrinkage)
+		Sigma = utilities.cov2corr(Sigma)
+		invSigma = utilities.chol2inv(Sigma)
+	if fixedX:
+		Sigma = utilities.cov2corr(np.dot(X.T, X))
+		invSigma = None
+	if infer_sigma or fixedX:
+		S_matrices = fetch_competitor_S(Sigma, groups, time0=time0, verbose=False)
 
+	# Now we loop through the S matrices
+	degen_flag = 'sdp_perturbed' in S_matrices 
+	output = {S_method:{} for S_method in S_matrices}
+	for S_method in S_matrices:
 
-	# Calculate power/fdp/score for a variety of 
-	# antisymmetric functions
-	output = {}
-	for pair_agg in PAIR_AGGS:
-		# Start by creating selections
-		selections, W = Z2selections(
-			Z=Z,
+		# Pull S matrix
+		S = S_matrices[S_method]
+
+		# If the method produces fully degenerate knockoffs,
+		# signal this as part of the filter kwargs
+		_sdp_degen = (degen_flag and S_method == 'sdp')
+
+		# Create knockoff_kwargs
+		filter_kwargs['knockoff_kwargs'] = {
+			'method':S_method.split('_')[0], # Split deals with _smoothed 
+			'S':S,
+			'verbose':False,
+			'_sdp_degen':_sdp_degen,
+			'max_epochs':150,
+		}
+
+		# Run MX knockoff filter to obtain
+		# Z statistics
+		knockoff_filter = KnockoffFilter(fixedX=fixedX)
+		knockoff_filter.forward(
+			X=X, 
+			y=y, 
+			mu=np.zeros(p),
+			Sigma=Sigma, 
 			groups=groups,
-			q=q,
-			pair_agg=pair_agg
+			fdr=q,
+			**filter_kwargs
 		)
-		# Then create power/fdp
-		power, fdp = selection2power(
-			selections, group_nonnulls
-		)
-		output[pair_agg] = [
-			power,
-			fdp,
-			score, 
-			score_type,
-			np.around(W, 4),
-			np.around(Z[0:p], 4),
-			np.around(Z[p:], 4),
-			selections,
-			seed
-		]
+		Z = knockoff_filter.Z
+		score = knockoff_filter.score
+		score_type = knockoff_filter.score_type
+
+
+		# Calculate power/fdp/score for a variety of 
+		# antisymmetric functions
+		for pair_agg in PAIR_AGGS:
+			# Start by creating selections
+			selections, W = Z2selections(
+				Z=Z,
+				groups=groups,
+				q=q,
+				pair_agg=pair_agg
+			)
+			# Then create power/fdp
+			power, fdp = selection2power(
+				selections, group_nonnulls
+			)
+			output[S_method][pair_agg] = [
+				power,
+				fdp,
+				score, 
+				score_type,
+				np.around(W, 4),
+				np.around(Z[0:p], 4),
+				np.around(Z[p:], 4),
+				selections,
+				seed
+			]
 
 	# Possibly log progress
 	try:
 		if seed % 10 == 0 and sample_kwargs['n'] == MAXIMUM_N:
 			overall_cost = time.time() - time0
 			local_cost = time.time() - localtime
-			S_method = filter_kwargs['knockoff_kwargs']['method']
-			print(f"Finished one {S_method} seed {seed}, took {local_cost} per seed, {overall_cost} total")
+			print(f"Finished one seed {seed}, took {local_cost} per seed, {overall_cost} total")
 	except:
 		# In notebooks this will error
 		pass
 
-	# Output: dict mapping pair_agg to [power, fdp, score, score_type, W, selection]
+	# Output: dict[S_method][pair_agg] to [power, fdp, score, score_type, W, selection]
 	return output
 
 def calc_power_and_fdr(
@@ -282,6 +331,7 @@ def calc_power_and_fdr(
 	sample_kwargs={},
 	filter_kwargs={},
 	seed_start=0,
+	S_matrices={'sdp':None, 'mcv':None},
 ):
 
 	# Fetch nonnulls
@@ -295,6 +345,8 @@ def calc_power_and_fdr(
 		q=q, 
 		sample_kwargs=sample_kwargs,
 		filter_kwargs=filter_kwargs,
+		S_matrices=S_matrices,
+		time0=time0
 	)
 	# (Possibly) apply multiprocessing
 	all_inputs = list(range(seed_start, seed_start+reps))
@@ -304,15 +356,19 @@ def calc_power_and_fdr(
 		all_inputs = all_inputs,
 		num_processes=num_processes
 	)
-	# Extract output and return
-	final_out = {}
-	for agg in PAIR_AGGS:
-		final_out[agg] = []
-		for j in range(len(all_outputs[0][agg])):
-			final_out[agg].append(
-				np.array([x[agg][j] for x in all_outputs])
-			)
 
+	# Extract output and return
+	final_out = {S_method:{} for S_method in all_outputs[0]}
+	for S_method in all_outputs[0]:
+		for agg in PAIR_AGGS:
+			final_out[S_method][agg] = []
+			num_columns = len(all_outputs[0][S_method][agg])
+			for col in range(num_columns):
+				final_out[S_method][agg].append(
+					np.array([x[S_method][agg][col] for x in all_outputs])
+				)
+
+	# Final out: dict[S_method][pair_agg] to arrays: power, fdp, score, score_type, W, selection
 	return final_out
 
 def analyze_degen_solns(
@@ -369,8 +425,6 @@ def analyze_degen_solns(
 	columns += ['dgp_number']
 	columns += sample_keys + filter_keys + fstat_keys + ['seed']
 	result_df = pd.DataFrame(columns=columns)
-
-	# Create competitor S-matrices in the non-FX/infer_sigma case
 	
 	# Check if we are going to ever fit MX knockoffs on the
 	# "ground truth" covariance matrix. If so, we'll memoize
@@ -393,7 +447,7 @@ def analyze_degen_solns(
 		ground_truth = True
 	if ground_truth and MX_flag:
 		print(f"Storing SDP/MCV results")
-		S_matrices = fetch_competitor_S(Sigma, groups,time0=time0)
+		S_matrices = fetch_competitor_S(Sigma, groups,time0=time0, verbose=True)
 	else:
 		print(f"Not storing SDP/MCV results")
 		S_matrices = {'sdp':None, 'mcv':None, 'mcv_smoothed':None}
@@ -442,48 +496,25 @@ def analyze_degen_solns(
 				else:
 					new_filter_kwargs['feature_stat_kwargs'] = new_fstat_kwargs
 
-				# Loop through competitor methods
-				degen_flag = 'sdp_perturbed' in S_matrices 
-				for S_method in S_matrices:
+				# Power/FDP for the S methods
+				out = calc_power_and_fdr(
+					Sigma=Sigma,
+					beta=beta,
+					groups=groups,
+					q=q,
+					reps=reps,
+					num_processes=num_processes,
+					sample_kwargs=new_sample_kwargs,
+					filter_kwargs=new_filter_kwargs,
+					seed_start=seed_start,
+					time0=time0,
+					S_matrices=S_matrices
+				)
 
-					# Pull S matrix
-					S = S_matrices[S_method]
-
-					# If the method produces denerate knockoffs,
-					# signal this as part of the filter kwargs
-					_sdp_degen = (degen_flag and S_method == 'sdp')
-
-					if 'smooth' in str(S_method).lower():
-						smoothing = 0.01 # Change to 0.001?
-					else:
-						smoothing = 0
-
-					# Create knockoff_kwargs
-					new_filter_kwargs['knockoff_kwargs'] = {
-						'method':S_method.split('_')[0], # Split deals with _smoothed 
-						'S':S,
-						'verbose':False,
-						'_sdp_degen':_sdp_degen,
-						'max_epochs':150,
-						'smoothing':smoothing,
-					}
-
-					# Power/FDP for the method
-					out = calc_power_and_fdr(
-						Sigma=Sigma,
-						beta=beta,
-						groups=groups,
-						q=q,
-						reps=reps,
-						num_processes=num_processes,
-						sample_kwargs=new_sample_kwargs,
-						filter_kwargs=new_filter_kwargs,
-						seed_start=seed_start,
-						time0=time0,
-					)
-					# Loop through antisymmetric functions
-					for agg in out:
-						for power, fdp, score, score_type, W, Z, tildeZ, selections, seed in zip(*out[agg]):
+				# Loop through antisymmetric functions and S matrices
+				for S_method in out:
+					for agg in PAIR_AGGS:
+						for power, fdp, score, score_type, W, Z, tildeZ, selections, seed in zip(*out[S_method][agg]):
 							row = [power, fdp, S_method, agg, score, score_type] 
 							row.extend(W.tolist())
 							row.extend(Z.tolist())
