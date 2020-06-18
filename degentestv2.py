@@ -135,6 +135,7 @@ def fetch_competitor_S(
 			Sigma=Sigma, 
 			groups=groups, 
 			max_block=500, 
+			sdp_tol=1e-5
 		)
 	if verbose:
 		print(f'Finished computing S matrix, time is {time.time() - time0}')
