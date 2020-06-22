@@ -140,35 +140,19 @@ def fetch_competitor_S(
 	if verbose:
 		print(f'Finished computing S matrix, time is {time.time() - time0}')
 
-	### Calculate FTKP matrix (nonconvex solver)
-	opt_smooth = knockadapt.nonconvex_sdp.NonconvexSDPSolver(
-		Sigma=Sigma,
-		groups=groups,
-		init_S=S_SDP,
-		smoothing=0.001,
-	)
-	S_MCV_smooth = opt_smooth.optimize(max_epochs=max_epochs)
+	### Calculate mcv matrix (nonconvex solver)
 	opt = knockadapt.nonconvex_sdp.NonconvexSDPSolver(
 		Sigma=Sigma,
 		groups=groups,
-		init_S=S_MCV_smooth,
+		init_S=S_SDP,
 	)
 	S_MCV = opt.optimize(max_epochs=max_epochs)
-	opt_smooth2 = knockadapt.nonconvex_sdp.NonconvexSDPSolver(
-		Sigma=Sigma,
-		groups=groups,
-		init_S=S_SDP,
-		smoothing=0.01,
-	)
-	S_MCV_smooth2 = opt_smooth.optimize(max_epochs=max_epochs)
 	if verbose:
 		print(f'Finished computing opt_S matrices, time is {time.time() - time0}')
 
 	return {
 		'sdp':S_SDP, 
 		'mcv':S_MCV,
-		'mcv_smoothed_0.001':S_MCV_smooth,
-		'mcv_smoothed_0.01':S_MCV_smooth2
 	}
 
 def Z2selections(Z, groups, q, **kwargs):
