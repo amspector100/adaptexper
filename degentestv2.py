@@ -90,9 +90,14 @@ def fetch_competitor_S(
 	Sigma,
 	groups,
 	time0,
+	rej_rate=0,
 	max_epochs=200,
 	verbose=False
 ):
+	"""
+	:param rej_rate: A guess / estimate of the rejection
+	rate. 
+	"""
 
 	### Special case: detect if Sigma is equicorrelated,
 	# in which case we can calculate the solution analytically
@@ -145,6 +150,7 @@ def fetch_competitor_S(
 		Sigma=Sigma,
 		groups=groups,
 		init_S=S_SDP,
+		rec_prop=rej_rate,
 	)
 	S_MCV = opt.optimize(max_epochs=max_epochs)
 	if verbose:
@@ -215,6 +221,10 @@ def single_dataset_power_fdr(
 	fixedX = fetch_kwarg(filter_kwargs, 'fixedx', default=False)
 	infer_sigma = fetch_kwarg(filter_kwargs, 'infer_sigma', default=False)
 
+	# For the metro sampler, we can compute better S matrices if we have a 
+	# guess or estimate of the rejection rate
+	rej_rate = fetch_kwarg(filter_kwargs, 'rej_rate', default=0)
+
 	# In particular, we want to calculate S matrices
 	# if we do not already know them.
 	if infer_sigma:
@@ -226,7 +236,14 @@ def single_dataset_power_fdr(
 		Sigma = utilities.cov2corr(np.dot(X.T, X))
 		invSigma = None
 	if infer_sigma or fixedX:
-		S_matrices = fetch_competitor_S(Sigma, groups, time0=time0, verbose=False)
+		print(f"Rej rate is {rej_rate}")
+		S_matrices = fetch_competitor_S(
+			Sigma=Sigma, 
+			groups=groups,
+			time0=time0,
+			rej_rate=rej_rate,
+			verbose=False
+		)
 
 	# Now we loop through the S matrices
 	degen_flag = 'sdp_perturbed' in S_matrices 
@@ -265,6 +282,9 @@ def single_dataset_power_fdr(
 		score = knockoff_filter.score
 		score_type = knockoff_filter.score_type
 
+		# Quality metrics
+		MAC, LMCV = knockoff_filter.compute_quality_metrics(X)
+
 
 		# Calculate power/fdp/score for a variety of 
 		# antisymmetric functions
@@ -283,13 +303,15 @@ def single_dataset_power_fdr(
 			output[S_method][pair_agg] = [
 				power,
 				fdp,
+				MAC,
+				LMCV,
 				score, 
 				score_type,
 				np.around(W, 4),
 				np.around(Z[0:p], 4),
 				np.around(Z[p:], 4),
 				selections,
-				seed
+				seed,
 			]
 
 	# Possibly log progress
@@ -302,7 +324,8 @@ def single_dataset_power_fdr(
 		# In notebooks this will error
 		pass
 
-	# Output: dict[S_method][pair_agg] to [power, fdp, score, score_type, W, selection]
+	# Output: dict[S_method][pair_agg] to
+	# [power, fdp, MAC, LMCV, score, score_type, W, Z, tildeZ, selection]
 	return output
 
 def calc_power_and_fdr(
@@ -353,7 +376,8 @@ def calc_power_and_fdr(
 					np.array([x[S_method][agg][col] for x in all_outputs])
 				)
 
-	# Final out: dict[S_method][pair_agg] to arrays: power, fdp, score, score_type, W, selection
+	# Final out: dict[S_method][pair_agg] to arrays: 
+	# power, fdp, MAC, LMCV, score, score_type, W, Z, tildeZ, selection
 	return final_out
 
 def analyze_degen_solns(
@@ -402,7 +426,7 @@ def analyze_degen_solns(
 
 	# Initialize final output
 	counter = 0
-	columns = ['power', 'fdp', 'S_method', 'antisym', 'score', 'score_type']
+	columns = ['power', 'fdp', 'S_method', 'mac', 'lmcv', 'antisym', 'score', 'score_type']
 	columns += [f'W{i}' for i in range(1, p+1)]
 	columns += [f'Z{i}' for i in range(1, p+1)]
 	columns += [f'tildeZ{i}' for i in range(1, p+1)]
@@ -431,8 +455,15 @@ def analyze_degen_solns(
 	else:
 		ground_truth = True
 	if ground_truth and MX_flag:
-		print(f"Storing SDP/MCV results")
-		S_matrices = fetch_competitor_S(Sigma, groups,time0=time0, verbose=True)
+		rej_rate = fetch_kwarg(filter_kwargs, 'rej_rate', default=[0])[0]
+		print(f"Storing SDP/MCV results with rej_rate={rej_rate}")
+		S_matrices = fetch_competitor_S(
+			Sigma=Sigma,
+			groups=groups,
+			time0=time0,
+			rej_rate=rej_rate,
+			verbose=True
+		)
 	else:
 		print(f"Not storing SDP/MCV results")
 		S_matrices = {'sdp':None, 'mcv':None, 'mcv_smoothed':None}
@@ -499,8 +530,9 @@ def analyze_degen_solns(
 				# Loop through antisymmetric functions and S matrices
 				for S_method in out:
 					for agg in PAIR_AGGS:
-						for power, fdp, score, score_type, W, Z, tildeZ, selections, seed in zip(*out[S_method][agg]):
-							row = [power, fdp, S_method, agg, score, score_type] 
+						for vals in zip(*out[S_method][agg]):
+							power, fdp, mac, lmcv, score, score_type, W, Z, tildeZ, selections, seed = vals
+							row = [power, fdp, S_method, mac, lmcv, agg, score, score_type] 
 							row.extend(W.tolist())
 							row.extend(Z.tolist())
 							row.extend(tildeZ.tolist())
@@ -779,3 +811,29 @@ if __name__ == '__main__':
 	time0 = time.time()
 	MAXIMUM_N = 0
 	main(sys.argv)
+
+
+	def compute_quality_metrics(self, X, Sigma=None, knockoffs=None):
+		"""
+		Computes (empirical) mean absolute correlation and LMCV
+		for features and knockoffs. This is only useful
+		for metropolized knockoffs.
+
+		This requires inverting 2*V - S.
+		"""
+
+		p = X.shape[1]
+		if knockoffs is None:
+			knockoffs = self.knockoffs
+		if Sigma is None:
+			Sigma = self.Sigma
+
+		# Empirical feature / knockoff correlations
+		self.hatG = np.corrcoef(X.T, knockoffs.T)
+		self.hatS = np.diag(self.hatG[0:p, p:])
+
+		# Calculate MAC and LMCV
+		MAC = np.abs(self.hatS).mean()
+		LMCV = mcv.fk_precision_trace(self.Sigma, np.diag(self.hatS))
+
+		return MAC, LMCV
