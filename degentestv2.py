@@ -150,7 +150,7 @@ def fetch_competitor_S(
 			return_S=True,
 		)
 	if verbose:
-		print(f'Finished computing S matrix, time is {time.time() - time0}')
+		print(f'Finished computing SDP matrix, time is {time.time() - time0}')
 
 	### Calculate mcv matrix (nonconvex solver)
 	_, S_MCV = knockadapt.knockoffs.gaussian_knockoffs(
@@ -164,7 +164,6 @@ def fetch_competitor_S(
 		max_epochs=max_epochs,
 		return_S=True,
 	)
-	print(Sigma)
 
 	if verbose:
 		print(f'Finished computing opt_S matrices, time is {time.time() - time0}')
