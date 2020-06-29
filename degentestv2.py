@@ -128,7 +128,7 @@ def fetch_competitor_S(
 		time0 = time.time() 
 	if p <= 500:
 		if verbose:
-			print(f'Computing SDP S matrix, time is {time.time() - time0}')
+			print(f'Now computing SDP S matrix, time is {time.time() - time0}')
 		_, S_SDP = knockadapt.knockoffs.gaussian_knockoffs(
 			X=dummy_X,
 			Sigma=Sigma,
@@ -139,7 +139,7 @@ def fetch_competitor_S(
 		)
 	else:
 		if verbose:
-			print(f'Computing ASDP S matrix, time is {time.time() - time0}')
+			print(f'Now computing ASDP S matrix, time is {time.time() - time0}')
 		_, S_SDP = knockadapt.knockoffs.gaussian_knockoffs(
 			X=dummy_X,
 			Sigma=Sigma, 
@@ -784,12 +784,15 @@ def main(args):
 		)
 
 		# Use precomputed Sigma for ising model
-		if new_dgp_kwargs['x_dist'] == 'gibbs':
-			if new_dgp_kwargs['method'] == 'ising':
-				p = new_dgp_kwargs['p']
-				file_dir = os.path.dirname(os.path.abspath(__file__))
-				print(f"Loading custom Sigma for gibbs ising model")
-				Sigma = np.loadtxt(f'{file_dir}/qcache/vout{p}.txt')
+		if 'x_dist' in new_dgp_kwargs:
+			if new_dgp_kwargs['x_dist'] == 'gibbs':
+				if new_dgp_kwargs['method'] != 'ising':
+					raise ValueError(f"Method must be supplied for x_dist == gibbs")
+				if new_dgp_kwargs['method'] == 'ising':
+					p = new_dgp_kwargs['p']
+					file_dir = os.path.dirname(os.path.abspath(__file__))
+					print(f"Loading custom Sigma for gibbs ising model")
+					Sigma = np.loadtxt(f'{file_dir}/qcache/vout{p}.txt')
 
 		# Cache beta
 		beta_df.loc[dgp_number] = beta
