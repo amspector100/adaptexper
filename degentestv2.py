@@ -123,36 +123,49 @@ def fetch_competitor_S(
 				}
 
 	### Calculate (A)SDP S-matrix
+	dummy_X = np.random.randn(10, p)
 	if time0 is None:
 		time0 = time.time() 
 	if p <= 500:
 		if verbose:
 			print(f'Computing SDP S matrix, time is {time.time() - time0}')
-		S_SDP = knockadapt.knockoffs.solve_group_SDP(
-			Sigma,
+		_, S_SDP = knockadapt.knockoffs.gaussian_knockoffs(
+			X=dummy_X,
+			Sigma=Sigma,
 			groups=groups,
-			sdp_tol=1e-5
+			sdp_tol=1e-5,
+			method='sdp',
+			return_S=True,
 		)
 	else:
 		if verbose:
 			print(f'Computing ASDP S matrix, time is {time.time() - time0}')
-		S_SDP = knockadapt.knockoffs.solve_group_ASDP(
+		_, S_SDP = knockadapt.knockoffs.gaussian_knockoffs(
+			X=dummy_X,
 			Sigma=Sigma, 
 			groups=groups, 
 			max_block=500, 
-			sdp_tol=1e-5
+			sdp_tol=1e-5,
+			method='asdp',
+			return_S=True,
 		)
 	if verbose:
 		print(f'Finished computing S matrix, time is {time.time() - time0}')
 
 	### Calculate mcv matrix (nonconvex solver)
-	opt = knockadapt.nonconvex_sdp.NonconvexSDPSolver(
+	_, S_MCV = knockadapt.knockoffs.gaussian_knockoffs(
+		X=dummy_X,
 		Sigma=Sigma,
 		groups=groups,
+		sdp_tol=1e-5,
+		method='mcv',
 		init_S=S_SDP,
 		rec_prop=rej_rate,
+		max_epochs=max_epochs,
+		return_S=True,
 	)
-	S_MCV = opt.optimize(max_epochs=max_epochs)
+	print(Sigma)
+
 	if verbose:
 		print(f'Finished computing opt_S matrices, time is {time.time() - time0}')
 
@@ -265,6 +278,13 @@ def single_dataset_power_fdr(
 			'_sdp_degen':_sdp_degen,
 			'max_epochs':150,
 		}
+		# Pass a few parameters to metro sampler
+		if 'x_dist' in sample_kwargs:
+			if str(sample_kwargs['x_dist']).lower() in ['ar1t', 'blockt']:
+				if 'df_t' in sample_kwargs:
+					filter_kwargs['knockoff_kwargs']['df_t'] = sample_kwargs['df_t']
+				else:
+					filter_kwargs['knockoff_kwargs']['df_t'] = 5 # This matters
 
 		# Run MX knockoff filter to obtain
 		# Z statistics
@@ -284,7 +304,6 @@ def single_dataset_power_fdr(
 
 		# Quality metrics
 		MAC, LMCV = knockoff_filter.compute_quality_metrics(X)
-
 
 		# Calculate power/fdp/score for a variety of 
 		# antisymmetric functions
@@ -764,6 +783,14 @@ def main(args):
 			**new_dgp_kwargs
 		)
 
+		# Use precomputed Sigma for ising model
+		if new_dgp_kwargs['x_dist'] == 'gibbs':
+			if new_dgp_kwargs['method'] == 'ising':
+				p = new_dgp_kwargs['p']
+				file_dir = os.path.dirname(os.path.abspath(__file__))
+				print(f"Loading custom Sigma for gibbs ising model")
+				Sigma = np.loadtxt(f'{file_dir}/qcache/vout{p}.txt')
+
 		# Cache beta
 		beta_df.loc[dgp_number] = beta
 		beta_df.to_csv(beta_path)
@@ -813,27 +840,3 @@ if __name__ == '__main__':
 	main(sys.argv)
 
 
-	def compute_quality_metrics(self, X, Sigma=None, knockoffs=None):
-		"""
-		Computes (empirical) mean absolute correlation and LMCV
-		for features and knockoffs. This is only useful
-		for metropolized knockoffs.
-
-		This requires inverting 2*V - S.
-		"""
-
-		p = X.shape[1]
-		if knockoffs is None:
-			knockoffs = self.knockoffs
-		if Sigma is None:
-			Sigma = self.Sigma
-
-		# Empirical feature / knockoff correlations
-		self.hatG = np.corrcoef(X.T, knockoffs.T)
-		self.hatS = np.diag(self.hatG[0:p, p:])
-
-		# Calculate MAC and LMCV
-		MAC = np.abs(self.hatS).mean()
-		LMCV = mcv.fk_precision_trace(self.Sigma, np.diag(self.hatS))
-
-		return MAC, LMCV
