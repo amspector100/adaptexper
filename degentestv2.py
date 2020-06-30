@@ -796,7 +796,9 @@ def main(args):
 						Sigma = np.loadtxt(f'{file_dir}/qcache/vout{p}.txt')
 					else:
 						print(f"No custom Sigma available for gibbs ising model: using default")
-
+						# Do not overwrite n
+						if 'n' in new_dgp_kwargs:
+							new_dgp_kwargs.pop('n')
 
 		# Cache beta
 		beta_df.loc[dgp_number] = beta
