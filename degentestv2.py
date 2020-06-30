@@ -785,13 +785,18 @@ def main(args):
 		# Use precomputed Sigma for ising model
 		if 'x_dist' in new_dgp_kwargs:
 			if new_dgp_kwargs['x_dist'] == 'gibbs':
-				if new_dgp_kwargs['method'] != 'ising':
+				if 'method' not in new_dgp_kwargs:
 					raise ValueError(f"Method must be supplied for x_dist == gibbs")
 				if new_dgp_kwargs['method'] == 'ising':
 					p = new_dgp_kwargs['p']
 					file_dir = os.path.dirname(os.path.abspath(__file__))
-					print(f"Loading custom Sigma for gibbs ising model")
-					Sigma = np.loadtxt(f'{file_dir}/qcache/vout{p}.txt')
+					v_file = f'{file_dir}/qcache/vout{p}.txt'
+					if os.path.exists(v_file):
+						print(f"Loading custom Sigma for gibbs ising model")
+						Sigma = np.loadtxt(f'{file_dir}/qcache/vout{p}.txt')
+					else:
+						print(f"No custom Sigma available for gibbs ising model: using default")
+
 
 		# Cache beta
 		beta_df.loc[dgp_number] = beta
