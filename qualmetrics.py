@@ -168,6 +168,8 @@ def fetch_competitor_S(
 	if verbose:
 		print(f'Finished computing opt_S matrices, time is {time.time() - time0}')
 
+	print(S_SDP)
+	print(S_MCV)
 	return {
 		'sdp':S_SDP, 
 		'mcv':S_MCV,
@@ -194,7 +196,7 @@ def selection2power(selections, group_nonnulls):
 
 	return [power, fdp]
 
-def single_dataset_power_fdr(
+def single_dataset_metrics(
 	seed,
 	Sigma,
 	beta,
@@ -285,8 +287,7 @@ def single_dataset_power_fdr(
 				else:
 					filter_kwargs['knockoff_kwargs']['df_t'] = 5 # This matters
 
-		# Run MX knockoff filter to obtain
-		# Z statistics
+		# Run MX knockoff filter to obtain qual metrics
 		knockoff_filter = KnockoffFilter(fixedX=fixedX)
 		knockoff_filter.forward(
 			X=X, 
@@ -297,37 +298,8 @@ def single_dataset_power_fdr(
 			fdr=q,
 			**filter_kwargs
 		)
-		Z = knockoff_filter.Z
-		score = knockoff_filter.score
-		score_type = knockoff_filter.score_type
-
-		# Calculate power/fdp/score for a variety of 
-		# antisymmetric functions
-		for pair_agg in PAIR_AGGS:
-			# Start by creating selections
-			selections, W = Z2selections(
-				Z=Z,
-				groups=groups,
-				q=q,
-				pair_agg=pair_agg
-			)
-			# Then create power/fdp
-			power, fdp = selection2power(
-				selections, group_nonnulls
-			)
-			output[S_method][pair_agg] = [
-				power,
-				fdp,
-				MAC,
-				LMCV,
-				score, 
-				score_type,
-				np.around(W, 4),
-				np.around(Z[0:p], 4),
-				np.around(Z[p:], 4),
-				selections,
-				seed,
-			]
+		corrs, ECVS = knockoff_filter.compute_quality_metrics(B=100)
+		output[S_method] = [corrs, ECVS, seed]
 
 	# Possibly log progress
 	try:
@@ -339,11 +311,11 @@ def single_dataset_power_fdr(
 		# In notebooks this will error
 		pass
 
-	# Output: dict[S_method][pair_agg] to
-	# [power, fdp, MAC, LMCV, score, score_type, W, Z, tildeZ, selection]
+	# Output: dict[S_method] to
+	# [corrs, ECVS]
 	return output
 
-def calc_power_and_fdr(
+def calc_metrics(
 	time0,
 	Sigma,
 	beta,
@@ -361,7 +333,7 @@ def calc_power_and_fdr(
 	p = Sigma.shape[0]
 	# Sample data reps times and calc power/fdp
 	partial_sd_power_fdr = partial(
-		single_dataset_power_fdr, 
+		single_dataset_metrics, 
 		Sigma=Sigma,
 		beta=beta,
 		groups=groups,
@@ -383,19 +355,18 @@ def calc_power_and_fdr(
 	# Extract output and return
 	final_out = {S_method:{} for S_method in all_outputs[0]}
 	for S_method in all_outputs[0]:
-		for agg in PAIR_AGGS:
-			final_out[S_method][agg] = []
-			num_columns = len(all_outputs[0][S_method][agg])
-			for col in range(num_columns):
-				final_out[S_method][agg].append(
-					np.array([x[S_method][agg][col] for x in all_outputs])
-				)
+		final_out[S_method] = []
+		num_columns = len(all_outputs[0][S_method])
+		for col in range(num_columns):
+			final_out[S_method].append(
+				np.array([x[S_method][col] for x in all_outputs])
+			)
 
 	# Final out: dict[S_method][pair_agg] to arrays: 
 	# power, fdp, MAC, LMCV, score, score_type, W, Z, tildeZ, selection
 	return final_out
 
-def analyze_degen_solns(
+def analyze_qual_metrics(
 	Sigma,
 	beta,
 	dgp_number,
@@ -441,11 +412,9 @@ def analyze_degen_solns(
 
 	# Initialize final output
 	counter = 0
-	columns = ['power', 'fdp', 'S_method', 'mac', 'lmcv', 'antisym', 'score', 'score_type']
-	columns += [f'W{i}' for i in range(1, p+1)]
-	columns += [f'Z{i}' for i in range(1, p+1)]
-	columns += [f'tildeZ{i}' for i in range(1, p+1)]
-	columns += [f'selection{i}' for i in range(1, p+1)] 
+	columns = ['S_method']
+	columns += [f'corr{i}' for i in range(1, p+1)]
+	columns += [f'ECV{i}' for i in range(1, p+1)]
 	columns += ['dgp_number']
 	columns += sample_keys + filter_keys + fstat_keys + ['seed']
 	result_df = pd.DataFrame(columns=columns)
@@ -483,34 +452,19 @@ def analyze_degen_solns(
 		print(f"Not storing SDP/MCV results")
 		S_matrices = {'sdp':None, 'mcv':None, 'mcv_smoothed':None}
 
-	### Calculate power of knockoffs for the two different methods
+	### Calculate metrics for knockoffs for MCV/SDP
 	for filter_vals in filter_product:
 		filter_vals = list(filter_vals)
 		new_filter_kwargs = {
 			key:val for key, val in zip(filter_keys, filter_vals)
 		}
-
-		# In high dimensional cases or binomial cases,
-		# don't fit OLS.
-		if 'feature_stat' in new_filter_kwargs:
-			fstat = new_filter_kwargs['feature_stat']
-		else:
-			fstat = 'lasso'
+		new_filter_kwargs['feature_stat'] = 'margcorr'
 
 		for sample_vals in sample_product:
 			sample_vals = list(sample_vals)
 			new_sample_kwargs = {
 				key:val for key, val in zip(sample_keys, sample_vals)
 			}
-
-			# Don't run OLS in certain cases
-			if fstat == 'ols':
-				if new_sample_kwargs['n'] < 2*new_sample_kwargs['p']:
-					continue
-				if 'y_dist' in new_sample_kwargs:
-					if new_sample_kwargs['y_dist'] == 'binomial':
-						continue
-
 			for fstat_vals in fstat_product:
 				# Extract feature-statistic kwargs
 				# and place them properly (as a dictionary value
@@ -528,7 +482,7 @@ def analyze_degen_solns(
 					new_filter_kwargs['feature_stat_kwargs'] = new_fstat_kwargs
 
 				# Power/FDP for the S methods
-				out = calc_power_and_fdr(
+				out = calc_metrics(
 					Sigma=Sigma,
 					beta=beta,
 					groups=groups,
@@ -544,18 +498,15 @@ def analyze_degen_solns(
 
 				# Loop through antisymmetric functions and S matrices
 				for S_method in out:
-					for agg in PAIR_AGGS:
-						for vals in zip(*out[S_method][agg]):
-							power, fdp, mac, lmcv, score, score_type, W, Z, tildeZ, selections, seed = vals
-							row = [power, fdp, S_method, mac, lmcv, agg, score, score_type] 
-							row.extend(W.tolist())
-							row.extend(Z.tolist())
-							row.extend(tildeZ.tolist())
-							row.extend(selections.astype(np.int32).tolist())
-							row += [dgp_number]
-							row += sample_vals + filter_vals + fstat_vals + [seed]
-							result_df.loc[counter] = row 
-							counter += 1
+					for vals in zip(*out[S_method]):
+						corrs, ecvs, seed = vals
+						row = [S_method] 
+						row.extend(corrs.tolist())
+						row.extend(ecvs.tolist())
+						row += [dgp_number]
+						row += sample_vals + filter_vals + fstat_vals + [seed]
+						result_df.loc[counter] = row 
+						counter += 1
 
 	return result_df, S_matrices
 
@@ -657,7 +608,7 @@ def parse_args(args):
 			all_kwargs[key_type][key] = val2list(value)
 
 	# Parse description 
-	description = ''
+	description = 'QUALITY METRICS ONLY'
 	if description_index is not None:
 		description += (' ').join(args[description_index+1:])
 	description += f'\n \n Other arguments were: {args[0:description_index]}'
@@ -711,7 +662,7 @@ def main(args):
 	today = str(datetime.date.today())
 	hour = str(datetime.datetime.today().time())
 	hour = hour.replace(':','-').split('.')[0]
-	output_path = f'data/degentestv3/{today}/{hour}'
+	output_path = f'data/degentestv3/{today}/QUAL-{hour}'
 	all_key_types = ['dgp', 'sample', 'filter', 'fstat']
 	all_kwargs = [dgp_kwargs,sample_kwargs, filter_kwargs, fstat_kwargs]
 
@@ -726,7 +677,7 @@ def main(args):
 	output_path += f'seedstart{seed_start}_reps{reps}_results.csv'
 	beta_path = output_path.split('.csv')[0] + '_betas.csv'
 	S_path = output_path.split('.csv')[0] + '_S.csv'
-	description_path = f'data/degentestv3/{today}/{hour}/' + 'description.txt'
+	description_path = f'data/degentestv3/{today}/QUAL-{hour}/' + 'description.txt'
 	output_dir = os.path.dirname(output_path)
 	if not os.path.exists(output_dir):
 		os.makedirs(output_dir)
@@ -799,7 +750,7 @@ def main(args):
 		beta_df.to_csv(beta_path)
 
 		# Create results
-		result, S_matrices = analyze_degen_solns(
+		result, S_matrices = analyze_qual_metrics(
 			Sigma,
 			beta,
 			dgp_number,
