@@ -91,6 +91,7 @@ def fetch_competitor_S(
 	Sigma,
 	groups,
 	time0,
+	S_curve=False,
 	rej_rate=0,
 	max_epochs=200,
 	verbose=False
@@ -100,10 +101,23 @@ def fetch_competitor_S(
 	rate. 
 	"""
 
+	# If S_curve is true, just do gamma * I for many gammas
+	p = Sigma.shape[0]
+	if S_curve:
+		Sigma.shape[0]
+		mineig = np.linalg.eigh(Sigma)[0].min()
+		gammas = 2*mineig*np.arange(0, 11, 1)/10
+		gammas[0] += 0.001
+		gammas[-1] -= 0.001
+		S_matrices = {
+			f'S{gamma}':gamma*np.eye(p) for gamma in gammas
+		}
+		return S_matrices
+
+
 	### Special case: detect if Sigma is equicorrelated,
 	# in which case we can calculate the solution analytically
 	# for ungrouped knockoffs.
-	p = Sigma.shape[0]
 	if np.unique(groups).shape[0] == p:
 		rho = Sigma[0, 1]
 		equicorr = rho*np.ones((p, p)) + (1-rho)*np.eye(p)
@@ -207,7 +221,7 @@ def single_dataset_power_fdr(
 		'knockoff_kwargs':{},
 	},
 	S_matrices=None,
-	time0=None
+	time0=None,
 ):
 	""" Knockoff kwargs should be included in filter_kwargs """
 
@@ -408,6 +422,7 @@ def analyze_degen_solns(
 	num_processes=5,
 	seed_start=0,
 	time0=None,
+	S_curve=False,
 	):
 	"""
 	:param dgp_number: A number corresponding to which dgp
@@ -476,8 +491,9 @@ def analyze_degen_solns(
 			Sigma=Sigma,
 			groups=groups,
 			time0=time0,
+			S_curve=S_curve,
 			rej_rate=rej_rate,
-			verbose=True
+			verbose=True,
 		)
 	else:
 		print(f"Not storing SDP/MCV results")
@@ -590,7 +606,7 @@ def parse_args(args):
 	args = args[1:]
 
 	# Initialize kwargs constructor
-	special_keys = ['reps', 'num_processes', 'seed_start', 'description']
+	special_keys = ['reps', 'num_processes', 'seed_start', 'description', 's_curve']
 	key_types = ['dgp', 'sample', 'filter', 'fstat']
 	all_kwargs = {ktype:{} for ktype in key_types}
 	key = None
@@ -703,6 +719,8 @@ def main(args):
 	num_processes = fetch_kwarg(sample_kwargs, 'num_processes', default=[5])[0]
 	seed_start = fetch_kwarg(sample_kwargs, 'seed_start', default=[0])[0]
 	description = fetch_kwarg(sample_kwargs, 'description', default='')
+	S_curve = fetch_kwarg(sample_kwargs, 's_curve', default=[False])[0]
+	print(f"S_curve flag = {S_curve}")
 	print(f"DGP kwargs are {dgp_kwargs}")
 	print(f"Sample kwargs are {sample_kwargs}")
 	print(f"Filter kwargs are {filter_kwargs}")
@@ -813,7 +831,8 @@ def main(args):
 			reps=reps,
 			num_processes=num_processes,
 			seed_start=seed_start,
-			time0=time0
+			time0=time0,
+			S_curve=S_curve
 		)
 		for key in dgp_keys:
 			if key == 'n':
