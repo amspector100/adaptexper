@@ -510,6 +510,10 @@ def analyze_degen_solns(
 				if 'y_dist' in new_sample_kwargs:
 					if new_sample_kwargs['y_dist'] == 'binomial':
 						continue
+			if fstat == 'dlasso':
+				if 'y_dist' in new_sample_kwargs:
+					if new_sample_kwargs['y_dist'] == 'binomial':
+						continue
 
 			for fstat_vals in fstat_product:
 				# Extract feature-statistic kwargs
