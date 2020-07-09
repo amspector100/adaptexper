@@ -26,6 +26,7 @@ from functools import partial
 
 # Global: the set of antisymmetric functions we use
 PAIR_AGGS = ['cd', 'sm']#, 'scd']
+DEFAULT_q = 0.2
 
 def fetch_kwarg(kwargs, key, default=None):
 	""" Utility function for parsing """
@@ -199,7 +200,6 @@ def single_dataset_power_fdr(
 	Sigma,
 	beta,
 	groups,
-	q=0.2,
 	normalize=True,
 	sample_kwargs={},
 	filter_kwargs={
@@ -211,13 +211,18 @@ def single_dataset_power_fdr(
 ):
 	""" Knockoff kwargs should be included in filter_kwargs """
 
-	# Fetch groups
+	# Fetch groups, infer q
 	p = Sigma.shape[0]
 	if groups is None:
 		groups = np.arange(1, p+1, 1)
 	group_nonnulls = knockadapt.utilities.fetch_group_nonnulls(
 		beta, groups
 	)
+	if 'q' in filter_kwargs:
+		q = filter_kwargs['q']
+		filter_kwargs['fdr'] = filter_kwargs.pop('q')
+	else:
+		q = DEFAULT_q
 
 	# Sample data, record time
 	localtime = time.time()
@@ -294,7 +299,6 @@ def single_dataset_power_fdr(
 			mu=np.zeros(p),
 			Sigma=Sigma, 
 			groups=groups,
-			fdr=q,
 			**filter_kwargs
 		)
 		Z = knockoff_filter.Z
@@ -318,8 +322,6 @@ def single_dataset_power_fdr(
 			output[S_method][pair_agg] = [
 				power,
 				fdp,
-				MAC,
-				LMCV,
 				score, 
 				score_type,
 				np.around(W, 4),
@@ -340,7 +342,7 @@ def single_dataset_power_fdr(
 		pass
 
 	# Output: dict[S_method][pair_agg] to
-	# [power, fdp, MAC, LMCV, score, score_type, W, Z, tildeZ, selection]
+	# [power, fdp, score, score_type, W, Z, tildeZ, selection]
 	return output
 
 def calc_power_and_fdr(
@@ -365,7 +367,6 @@ def calc_power_and_fdr(
 		Sigma=Sigma,
 		beta=beta,
 		groups=groups,
-		q=q, 
 		sample_kwargs=sample_kwargs,
 		filter_kwargs=filter_kwargs,
 		S_matrices=S_matrices,
@@ -392,7 +393,7 @@ def calc_power_and_fdr(
 				)
 
 	# Final out: dict[S_method][pair_agg] to arrays: 
-	# power, fdp, MAC, LMCV, score, score_type, W, Z, tildeZ, selection
+	# power, fdp, score, score_type, W, Z, tildeZ, selection
 	return final_out
 
 def analyze_degen_solns(
@@ -403,7 +404,6 @@ def analyze_degen_solns(
 	sample_kwargs={},
 	filter_kwargs={},
 	fstat_kwargs={},
-	q=0.2,
 	reps=50,
 	num_processes=5,
 	seed_start=0,
@@ -441,7 +441,7 @@ def analyze_degen_solns(
 
 	# Initialize final output
 	counter = 0
-	columns = ['power', 'fdp', 'S_method', 'mac', 'lmcv', 'antisym', 'score', 'score_type']
+	columns = ['power', 'fdp', 'S_method', 'antisym', 'score', 'score_type']
 	columns += [f'W{i}' for i in range(1, p+1)]
 	columns += [f'Z{i}' for i in range(1, p+1)]
 	columns += [f'tildeZ{i}' for i in range(1, p+1)]
@@ -532,7 +532,6 @@ def analyze_degen_solns(
 					Sigma=Sigma,
 					beta=beta,
 					groups=groups,
-					q=q,
 					reps=reps,
 					num_processes=num_processes,
 					sample_kwargs=new_sample_kwargs,
@@ -546,8 +545,8 @@ def analyze_degen_solns(
 				for S_method in out:
 					for agg in PAIR_AGGS:
 						for vals in zip(*out[S_method][agg]):
-							power, fdp, mac, lmcv, score, score_type, W, Z, tildeZ, selections, seed = vals
-							row = [power, fdp, S_method, mac, lmcv, agg, score, score_type] 
+							power, fdp, score, score_type, W, Z, tildeZ, selections, seed = vals
+							row = [power, fdp, S_method, agg, score, score_type] 
 							row.extend(W.tolist())
 							row.extend(Z.tolist())
 							row.extend(tildeZ.tolist())
@@ -807,7 +806,6 @@ def main(args):
 			sample_kwargs=sample_kwargs,
 			filter_kwargs=filter_kwargs,
 			fstat_kwargs=fstat_kwargs,
-			q=0.2,
 			reps=reps,
 			num_processes=num_processes,
 			seed_start=seed_start,
