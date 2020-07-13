@@ -260,7 +260,7 @@ def single_dataset_power_fdr(
 	# if we do not already know them.
 	if infer_sigma:
 		shrinkage = fetch_kwarg(filter_kwargs, 'shrinkage', default='ledoitwolf')
-		Sigma, _ = knockadapt.knockoffs.estimate_covariance(X, shrinkage=shrinkage)
+		Sigma, _ = knockadapt.utilities.estimate_covariance(X, shrinkage=shrinkage)
 		Sigma = utilities.cov2corr(Sigma)
 		invSigma = utilities.chol2inv(Sigma)
 	if fixedX:
