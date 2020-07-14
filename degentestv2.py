@@ -94,7 +94,8 @@ def fetch_competitor_S(
 	S_curve=False,
 	rej_rate=0,
 	max_epochs=200,
-	verbose=False
+	verbose=False,
+	**kwargs
 ):
 	"""
 	:param rej_rate: A guess / estimate of the rejection
@@ -151,6 +152,7 @@ def fetch_competitor_S(
 			sdp_tol=1e-5,
 			method='sdp',
 			return_S=True,
+			**kwargs
 		)
 	else:
 		if verbose:
@@ -163,6 +165,7 @@ def fetch_competitor_S(
 			sdp_tol=1e-5,
 			method='asdp',
 			return_S=True,
+			**kwargs
 		)
 	if verbose:
 		print(f'Finished computing SDP matrix, time is {time.time() - time0}')
@@ -178,6 +181,7 @@ def fetch_competitor_S(
 		rec_prop=rej_rate,
 		max_epochs=max_epochs,
 		return_S=True,
+		**kwargs
 	)
 
 	if verbose:
@@ -229,6 +233,17 @@ def single_dataset_power_fdr(
 	p = Sigma.shape[0]
 	if groups is None:
 		groups = np.arange(1, p+1, 1)
+
+	# Sample data, record time
+	localtime = time.time()
+	np.random.seed(seed)
+	X, y, beta, _, _ = knockadapt.graphs.sample_data(
+		corr_matrix=Sigma,
+		beta=beta,
+		**sample_kwargs
+	)
+
+	# Parse nonnulls and q
 	group_nonnulls = knockadapt.utilities.fetch_group_nonnulls(
 		beta, groups
 	)
@@ -237,15 +252,6 @@ def single_dataset_power_fdr(
 		filter_kwargs['fdr'] = filter_kwargs.pop('q')
 	else:
 		q = DEFAULT_q
-
-	# Sample data, record time
-	localtime = time.time()
-	np.random.seed(seed)
-	X, y, _, _, _ = knockadapt.graphs.sample_data(
-		corr_matrix=Sigma,
-		beta=beta,
-		**sample_kwargs
-	)
 
 	# Some updates for fixedX knockoffs
 	# and MX knockoffs without parametrization
@@ -268,12 +274,18 @@ def single_dataset_power_fdr(
 		invSigma = None
 	if infer_sigma or fixedX:
 		print(f"Rej rate is {rej_rate}")
+		if 'knockoff_kwargs' in filter_kwargs:
+			kwargs = filter_kwargs['knockoff_kwargs']
+		else:
+			kwargs = {}
+		verbose = fetch_kwarg(kwargs, 'verbose', default=False)
 		S_matrices = fetch_competitor_S(
 			Sigma=Sigma, 
 			groups=groups,
 			time0=time0,
 			rej_rate=rej_rate,
-			verbose=False
+			verbose=verbose,
+			**kwargs
 		)
 
 	# Now we loop through the S matrices
@@ -307,13 +319,16 @@ def single_dataset_power_fdr(
 				continue
 
 		# Create knockoff_kwargs
-		filter_kwargs['knockoff_kwargs'] = {
-			'method':S_method.split('_')[0], # Split deals with _smoothed 
-			'S':S,
-			'verbose':False,
-			'_sdp_degen':_sdp_degen,
-			'max_epochs':150,
-		}
+		if 'knockoff_kwargs' not in filter_kwargs:
+			filter_kwargs['knockoff_kwargs'] = {}
+		filter_kwargs['knockoff_kwargs']['S'] = S
+		# Note split deals with _smoothed 
+		filter_kwargs['knockoff_kwargs']['method'] = S_method.split('_')[0]
+		filter_kwargs['knockoff_kwargs']['_sdp_degen'] = _sdp_degen
+		filter_kwargs['knockoff_kwargs']['max_epochs'] = 150
+		if 'verbose' not in filter_kwargs['knockoff_kwargs']:
+			filter_kwargs['knockoff_kwargs']['verbose'] = False
+
 		# Pass a few parameters to metro sampler
 		if 'x_dist' in sample_kwargs:
 			if str(sample_kwargs['x_dist']).lower() in ['ar1t', 'blockt']:
@@ -624,7 +639,7 @@ def parse_args(args):
 	args = args[1:]
 
 	# Initialize kwargs constructor
-	special_keys = ['reps', 'num_processes', 'seed_start', 'description', 's_curve']
+	special_keys = ['reps', 'num_processes', 'seed_start', 'description', 's_curve', 'resample_beta']
 	key_types = ['dgp', 'sample', 'filter', 'fstat']
 	all_kwargs = {ktype:{} for ktype in key_types}
 	key = None
@@ -727,8 +742,6 @@ def main(args):
 	if 'pair_agg' in fstat_kwargs:
 		raise ValueError("Many pair_aggs will be analyzed anyway. Do not add this as a fstat_kwarg.")
 	# Some common errors I make
-	if 'coeff_dist' in sample_kwargs:
-		raise ValueError("coeff_dist ought to be in dgp_kwargs")
 	if 'y_dist' in dgp_kwargs:
 		raise ValueError("y_dist ought to be in sample_kwargs")
 
@@ -738,6 +751,7 @@ def main(args):
 	seed_start = fetch_kwarg(sample_kwargs, 'seed_start', default=[0])[0]
 	description = fetch_kwarg(sample_kwargs, 'description', default='')
 	S_curve = fetch_kwarg(sample_kwargs, 's_curve', default=[False])[0]
+	resample_beta = fetch_kwarg(sample_kwargs, 'resample_beta', default=[False])[0]
 	print(f"S_curve flag = {S_curve}")
 	print(f"DGP kwargs are {dgp_kwargs}")
 	print(f"Sample kwargs are {sample_kwargs}")
@@ -834,14 +848,15 @@ def main(args):
 						print(f"No custom Sigma available for gibbs ising model: using default")
 
 		# Cache beta
-		beta_df.loc[dgp_number] = beta
-		beta_df.to_csv(beta_path)
+		if not resample_beta:
+			beta_df.loc[dgp_number] = beta
+			beta_df.to_csv(beta_path)
 
 		# Create results
 		result, S_matrices = analyze_degen_solns(
-			Sigma,
-			beta,
-			dgp_number,
+			Sigma=Sigma,
+			beta = beta if not resample_beta else None,
+			dgp_number=dgp_number,
 			groups=None,
 			sample_kwargs=sample_kwargs,
 			filter_kwargs=filter_kwargs,
@@ -875,6 +890,7 @@ def main(args):
 		# Increment dgp number
 		dgp_number += 1
 
+	#print(all_results[['power', 'S_method', 'antisym', 'seed']])
 	return all_results
 
 if __name__ == '__main__':
