@@ -124,17 +124,17 @@ def fetch_competitor_S(
 		if np.all(Sigma==equicorr):
 			print(f"Sigma is equicorr (rho={rho}), using analytical solution")
 			S_SDP = min(1, 2-2*rho)*np.eye(p)
-			scale_FKTP = (1-rho)
-			S_FKTP = scale_FKTP*np.eye(p)
-			print(S_FKTP)
+			scale_MCV = (1-rho)
+			S_MCV = scale_MCV*np.eye(p)
+			print(S_MCV)
 			if rho < 0.5:
-				return {'sdp':S_SDP, 'ftkp':S_FKTP}
+				return {'sdp':S_SDP, 'mcv':S_MCV}
 			else:
 				S_SDP_perturbed = S_SDP*(0.99)
 				return {
 				'sdp':S_SDP, 
 				'sdp_perturbed':S_SDP_perturbed, 
-				'ftkp':S_FKTP
+				'mcv':S_MCV
 				}
 
 	### Calculate (A)SDP S-matrix
@@ -287,6 +287,24 @@ def single_dataset_power_fdr(
 		# If the method produces fully degenerate knockoffs,
 		# signal this as part of the filter kwargs
 		_sdp_degen = (degen_flag and S_method == 'sdp')
+
+		# Do NOT run OLS or debiased lasso for degenerate case,
+		# because the model is unidentifiable
+		if _sdp_degen and 'feature_stat' in filter_kwargs:
+			if filter_kwargs['feature_stat'] == 'dlasso':
+				for pair_agg in PAIR_AGGS:
+					output[S_method][pair_agg] = [
+						0,
+						0,
+						0,
+						"NULL",
+						np.zeros(p),
+						np.zeros(p),
+						np.zeros(p),
+						np.zeros(p),
+						seed
+					] 
+				continue
 
 		# Create knockoff_kwargs
 		filter_kwargs['knockoff_kwargs'] = {
