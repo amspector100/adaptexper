@@ -103,7 +103,14 @@ def fetch_competitor_S(
 	"""
 
 	# If S_curve is true, just do gamma * I for many gammas
-	p = Sigma.shape[0]
+	if Sigma is not None:
+		p = Sigma.shape[0]
+	else:
+		if 'X' not in kwargs:
+			raise ValueError(
+				f"One of Sigma or X must be provided"
+			)
+		p = kwargs['X'].shape[1]
 	if S_curve:
 		Sigma.shape[0]
 		mineig = np.linalg.eigh(Sigma)[0].min()
@@ -119,34 +126,37 @@ def fetch_competitor_S(
 	### Special case: detect if Sigma is equicorrelated,
 	# in which case we can calculate the solution analytically
 	# for ungrouped knockoffs.
-	if np.unique(groups).shape[0] == p:
-		rho = Sigma[0, 1]
-		equicorr = rho*np.ones((p, p)) + (1-rho)*np.eye(p)
-		if np.all(Sigma==equicorr):
-			print(f"Sigma is equicorr (rho={rho}), using analytical solution")
-			S_SDP = min(1, 2-2*rho)*np.eye(p)
-			scale_MCV = (1-rho)
-			S_MCV = scale_MCV*np.eye(p)
-			print(S_MCV)
-			if rho < 0.5:
-				return {'sdp':S_SDP, 'mcv':S_MCV}
-			else:
-				S_SDP_perturbed = S_SDP*(0.99)
-				return {
-				'sdp':S_SDP, 
-				'sdp_perturbed':S_SDP_perturbed, 
-				'mcv':S_MCV
-				}
+	if Sigma is not None:
+		if np.unique(groups).shape[0] == p:
+			rho = Sigma[0, 1]
+			equicorr = rho*np.ones((p, p)) + (1-rho)*np.eye(p)
+			if np.all(Sigma==equicorr):
+				print(f"Sigma is equicorr (rho={rho}), using analytical solution")
+				S_SDP = min(1, 2-2*rho)*np.eye(p)
+				scale_MCV = (1-rho)
+				S_MCV = scale_MCV*np.eye(p)
+				print(S_MCV)
+				if rho < 0.5:
+					return {'sdp':S_SDP, 'mcv':S_MCV}
+				else:
+					S_SDP_perturbed = S_SDP*(0.99)
+					return {
+					'sdp':S_SDP, 
+					'sdp_perturbed':S_SDP_perturbed, 
+					'mcv':S_MCV
+					}
 
 	### Calculate (A)SDP S-matrix
-	dummy_X = np.random.randn(10, p)
+	# Dummy x matrix to satisfy kwargs.
+	# Honestly, this is a pretty poor interface...
+	if 'X' not in kwargs:
+		kwargs['X'] = np.random.randn(10, p)
 	if time0 is None:
 		time0 = time.time() 
 	if p <= 500:
 		if verbose:
 			print(f'Now computing SDP S matrix, time is {time.time() - time0}')
 		_, S_SDP = knockadapt.knockoffs.gaussian_knockoffs(
-			X=dummy_X,
 			Sigma=Sigma,
 			groups=groups,
 			sdp_tol=1e-5,
@@ -158,7 +168,6 @@ def fetch_competitor_S(
 		if verbose:
 			print(f'Now computing ASDP S matrix, time is {time.time() - time0}')
 		_, S_SDP = knockadapt.knockoffs.gaussian_knockoffs(
-			X=dummy_X,
 			Sigma=Sigma, 
 			groups=groups, 
 			max_block=500, 
@@ -172,7 +181,6 @@ def fetch_competitor_S(
 
 	### Calculate mcv matrix (nonconvex solver)
 	_, S_MCV = knockadapt.knockoffs.gaussian_knockoffs(
-		X=dummy_X,
 		Sigma=Sigma,
 		groups=groups,
 		sdp_tol=1e-5,
@@ -264,20 +272,22 @@ def single_dataset_power_fdr(
 
 	# In particular, we want to calculate S matrices
 	# if we do not already know them.
+	if 'knockoff_kwargs' in filter_kwargs:
+		kwargs = filter_kwargs['knockoff_kwargs']
+	else:
+		kwargs = {}
 	if infer_sigma:
 		shrinkage = fetch_kwarg(filter_kwargs, 'shrinkage', default='ledoitwolf')
 		Sigma, _ = knockadapt.utilities.estimate_covariance(X, shrinkage=shrinkage)
 		Sigma = utilities.cov2corr(Sigma)
 		invSigma = utilities.chol2inv(Sigma)
 	if fixedX:
-		Sigma = utilities.cov2corr(np.dot(X.T, X))
+		kwargs['X'] = X
+		kwargs['fixedX'] = True
+		Sigma = None
 		invSigma = None
 	if infer_sigma or fixedX:
 		print(f"Rej rate is {rej_rate}")
-		if 'knockoff_kwargs' in filter_kwargs:
-			kwargs = filter_kwargs['knockoff_kwargs']
-		else:
-			kwargs = {}
 		verbose = fetch_kwarg(kwargs, 'verbose', default=False)
 		S_matrices = fetch_competitor_S(
 			Sigma=Sigma, 
@@ -890,7 +900,7 @@ def main(args):
 		# Increment dgp number
 		dgp_number += 1
 
-	#print(all_results[['power', 'S_method', 'antisym', 'seed']])
+	print(all_results[['power', 'S_method', 'antisym', 'seed']])
 	return all_results
 
 if __name__ == '__main__':
