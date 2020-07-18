@@ -111,6 +111,7 @@ def fetch_competitor_S(
 				f"One of Sigma or X must be provided"
 			)
 		p = kwargs['X'].shape[1]
+	fetch_kwarg(kwargs, 'sdp_tol', None) # Prevent double arg errors
 	if S_curve:
 		Sigma.shape[0]
 		mineig = np.linalg.eigh(Sigma)[0].min()
@@ -129,55 +130,50 @@ def fetch_competitor_S(
 	if Sigma is not None:
 		if np.unique(groups).shape[0] == p:
 			rho = Sigma[0, 1]
-			equicorr = rho*np.ones((p, p)) + (1-rho)*np.eye(p)
-			if np.all(Sigma==equicorr):
-				print(f"Sigma is equicorr (rho={rho}), using analytical solution")
-				S_SDP = min(1, 2-2*rho)*np.eye(p)
-				scale_MCV = (1-rho)
-				S_MCV = scale_MCV*np.eye(p)
-				print(S_MCV)
-				if rho < 0.5:
-					return {'sdp':S_SDP, 'mcv':S_MCV}
-				else:
-					S_SDP_perturbed = S_SDP*(0.99)
-					return {
-					'sdp':S_SDP, 
-					'sdp_perturbed':S_SDP_perturbed, 
-					'mcv':S_MCV
-					}
+			if rho >= 0:
+				equicorr = rho*np.ones((p, p)) + (1-rho)*np.eye(p)
+				if np.all(Sigma==equicorr):
+					print(f"Sigma is equicorr (rho={rho}), using analytical solution")
+					S_SDP = min(1, 2-2*rho)*np.eye(p)
+					scale_MCV = (1-rho)
+					S_MCV = scale_MCV*np.eye(p)
+					print(S_MCV)
+					if rho < 0.5:
+						return {'sdp':S_SDP, 'mcv':S_MCV}
+					else:
+						S_SDP_perturbed = S_SDP*(0.99)
+						return {
+						'sdp':S_SDP, 
+						'sdp_perturbed':S_SDP_perturbed, 
+						'mcv':S_MCV
+						}
 
 	### Calculate (A)SDP S-matrix
 	# Dummy x matrix to satisfy kwargs.
-	# Honestly, this is a pretty poor interface...
 	if 'X' not in kwargs:
 		kwargs['X'] = np.random.randn(10, p)
 	if time0 is None:
 		time0 = time.time() 
-	if p <= 500:
-		if verbose:
-			print(f'Now computing SDP S matrix, time is {time.time() - time0}')
+
+	# Initialize result and compute SDP matrices
+	S_matrices = {}
+	if verbose and p <= 500:
+		print(f'Now computing SDP S matrices, time is {time.time() - time0}')
+	elif verbose:
+		print(f'Now computing ASDP S matrices, time is {time.time() - time0}')
+	for S_method, sdp_tol in zip(['sdp', 'sdp_tol'], [1e-5, 1e-2]):
 		_, S_SDP = knockadapt.knockoffs.gaussian_knockoffs(
 			Sigma=Sigma,
 			groups=groups,
-			sdp_tol=1e-5,
-			method='sdp',
+			max_block=501, 
+			sdp_tol=sdp_tol,
+			method='sdp' if p <= 500 else 'asdp',
 			return_S=True,
 			**kwargs
 		)
-	else:
-		if verbose:
-			print(f'Now computing ASDP S matrix, time is {time.time() - time0}')
-		_, S_SDP = knockadapt.knockoffs.gaussian_knockoffs(
-			Sigma=Sigma, 
-			groups=groups, 
-			max_block=500, 
-			sdp_tol=1e-5,
-			method='asdp',
-			return_S=True,
-			**kwargs
-		)
+		S_matrices[S_method] = S_SDP
 	if verbose:
-		print(f'Finished computing SDP matrix, time is {time.time() - time0}')
+		print(f'Finished computing SDP matrices, time is {time.time() - time0}')
 
 	### Calculate mcv matrix (nonconvex solver)
 	_, S_MCV = knockadapt.knockoffs.gaussian_knockoffs(
@@ -191,14 +187,12 @@ def fetch_competitor_S(
 		return_S=True,
 		**kwargs
 	)
+	S_matrices['mcv'] = S_MCV
 
 	if verbose:
-		print(f'Finished computing opt_S matrices, time is {time.time() - time0}')
+		print(f'Finished computing MCV matrix, time is {time.time() - time0}')
 
-	return {
-		'sdp':S_SDP, 
-		'mcv':S_MCV,
-	}
+	return S_matrices
 
 def Z2selections(Z, groups, q, **kwargs):
 	
@@ -241,6 +235,9 @@ def single_dataset_power_fdr(
 	p = Sigma.shape[0]
 	if groups is None:
 		groups = np.arange(1, p+1, 1)
+	# Prevent editing
+	filter_kwargs = filter_kwargs.copy()
+	sample_kwargs = sample_kwargs.copy()
 
 	# Sample data, record time
 	localtime = time.time()
@@ -540,7 +537,9 @@ def analyze_degen_solns(
 		)
 	else:
 		print(f"Not storing SDP/MCV results")
-		S_matrices = {'sdp':None, 'mcv':None, 'mcv_smoothed':None}
+		# This signals to the further functions which S_methods
+		# to expect to fit
+		S_matrices = {'sdp_tol':None, 'sdp':None, 'mcv':None}
 
 	### Calculate power of knockoffs for the two different methods
 	for filter_vals in filter_product:
@@ -900,7 +899,7 @@ def main(args):
 		# Increment dgp number
 		dgp_number += 1
 
-	print(all_results[['power', 'S_method', 'antisym', 'seed']])
+	print(all_results[['power', 'fdp', 'S_method', 'antisym', 'seed', 'feature_stat']])
 	return all_results
 
 if __name__ == '__main__':
