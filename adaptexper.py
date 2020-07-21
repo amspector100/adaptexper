@@ -351,6 +351,9 @@ def single_dataset_cutoff_statistics(
 				)
 				counter += 1
 
+	if n == MAXIMUM_N and seed % 10 == 0:
+		print(f"Finished with seed {seed}, took {time.time() - localtime}")
+
 	return output
 
 def calc_cutoff_statistics(
@@ -440,7 +443,7 @@ def analyze_resolution_powers(
 		Sigma, method='average'
 	)
 	cutoffs = knockadapt.adaptive.create_cutoffs(
-		link=link, reduction=5, max_size=50
+		link=link, reduction=5, max_size=20
 	)
 	all_groups = [hierarchy.fcluster(link, cutoff, criterion='distance') for cutoff in cutoffs]
 	num_groups = [np.unique(groups).shape[0] for groups in all_groups]
@@ -796,7 +799,7 @@ def main(args):
 	relevant_cols = [c for c in all_results.columns if c[0] not in ['W', 'Z']]
 	relevant_cols = [c for c in relevant_cols if 'tilde' not in c]
 	relevant_cols = [c for c in relevant_cols if 'selection' not in c]
-	print(all_results[relevant_cols])
+	print(all_results.groupby(['cutoff', 'split_type'])[['power', 'epower', 'fdp']].mean())
 	return all_results
 
 if __name__ == '__main__':
