@@ -329,7 +329,8 @@ def single_dataset_cutoff_statistics(
 				groups=groups,
 				mu=np.zeros(p),
 				Sigma=Sigma,
-				rec_prop=rec_prop
+				rec_prop=rec_prop,
+				**filter_kwargs
 			)
 			for split_type, kf in zip(
 				['precycled', 'recycled'],
@@ -349,10 +350,6 @@ def single_dataset_cutoff_statistics(
 					knockoff_filter=kf,
 				)
 				counter += 1
-
-
-
-
 
 	return output
 

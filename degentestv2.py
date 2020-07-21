@@ -877,7 +877,7 @@ def main(args):
 			S_curve=S_curve
 		)
 		for key in dgp_keys:
-			if key == 'n':
+			if key in sample_kwargs:
 				continue
 			result[key] = new_dgp_kwargs[key]
 		all_results = all_results.append(
