@@ -126,6 +126,8 @@ def single_cutoff_statistics(
 	rec_prop,
 	cutoff,
 	m,
+	groups,
+	beta,
 	group_sizes,
 	group_nonnulls,
 	knockoff_filter=None,
@@ -140,6 +142,7 @@ def single_cutoff_statistics(
 
 	# Knockoff filter for this cutoff
 	# (Can be passed in)
+	filter_kwargs['groups'] = groups
 	if knockoff_filter is None:
 		knockoff_filter = KnockoffFilter()
 		knockoff_filter.forward(
@@ -172,8 +175,8 @@ def single_cutoff_statistics(
 		score, 
 		score_type,
 		# Statistics / dgp
-		*np.concatenate([group_sizes, padding]).tolist(),
-		*np.concatenate([group_nonnulls, padding]).tolist(),
+		*groups.tolist(),
+		*beta.tolist(),
 		*np.concatenate([np.around(W, 4), padding]).tolist(),
 		*np.around(Z[0:p], 4).tolist(),
 		*np.around(Z[p:], 4).tolist(),
@@ -208,7 +211,6 @@ def single_dataset_cutoff_statistics(
 		**sample_kwargs
 	)
 	n = X.shape[0]
-	print(f"n is {n}")
 
 	# FDR target level
 	if 'q' in filter_kwargs:
@@ -221,8 +223,8 @@ def single_dataset_cutoff_statistics(
 	# Now we loop through the cutoffs 
 	cols = ['seed', 'split_type', 'cutoff', 'rec_prop', 'm']
 	cols += ['power', 'epower', 'fdp', 'score', 'score_type']
-	cols += [f'groupsize{i}' for i in range(1, p+1)]
-	cols += [f'nonnull{i}' for i in range(1, p+1)]
+	cols += [f'group{i}' for i in range(1, p+1)]
+	cols += [f'beta{i}' for i in range(1, p+1)]
 	cols += [f'W{i}' for i in range(1, p+1)]
 	cols += [f'Z{i}' for i in range(1, p+1)]
 	cols += [f'tildeZ{i}' for i in range(1, p+1)]
@@ -256,6 +258,7 @@ def single_dataset_cutoff_statistics(
 				rec_prop=-1,
 				cutoff=cutoff,
 				m=m,
+				beta=beta,
 				group_sizes=group_sizes,
 				group_nonnulls=group_nonnulls,
 				# Filter kwargs
@@ -284,6 +287,7 @@ def single_dataset_cutoff_statistics(
 					rec_prop=rec_prop, # This does NOT cause recycling, it's for logging
 					cutoff=cutoff,
 					m=m,
+					beta=beta,
 					group_sizes=group_sizes,
 					group_nonnulls=group_nonnulls,
 					# Filter kwargs
@@ -307,6 +311,7 @@ def single_dataset_cutoff_statistics(
 					rec_prop=rec_prop,  # This does NOT cause recycling, it's for logging
 					cutoff=cutoff,
 					m=m,
+					beta=beta,
 					group_sizes=group_sizes,
 					group_nonnulls=group_nonnulls,
 					# Filter kwargs
@@ -322,8 +327,6 @@ def single_dataset_cutoff_statistics(
 
 
 			# Split knockoff filter, WITH recycling
-			# New S-matrix which accounts for recycling
-			# filter_kwargs['knockoff_kwargs'] = {'S':S_matrices[m][rec_prop]}
 			if split_types[0] is None or 'recycled' in split_types:
 				output.loc[counter] = single_cutoff_statistics(
 					p=p,
@@ -333,6 +336,32 @@ def single_dataset_cutoff_statistics(
 					rec_prop=rec_prop,
 					cutoff=cutoff,
 					m=m,
+					beta=beta,
+					group_sizes=group_sizes,
+					group_nonnulls=group_nonnulls,
+					# Filter kwargs
+					X=X, 
+					y=y, 
+					mu=np.zeros(p),
+					Sigma=Sigma, 
+					groups=groups,
+					recycle_up_to=int(rec_prop * n),
+					**filter_kwargs
+				)
+				counter += 1
+
+			# New S-matrix which accounts for recycling
+			if 'recycled_new_s' in split_types:
+				filter_kwargs['knockoff_kwargs']['S'] = S_matrices[m][rec_prop]
+				output.loc[counter] = single_cutoff_statistics(
+					p=p,
+					num_groups=num_groups,
+					seed=seed,
+					split_type='recycled_new_s',
+					rec_prop=rec_prop,
+					cutoff=cutoff,
+					m=m,
+					beta=beta,
 					group_sizes=group_sizes,
 					group_nonnulls=group_nonnulls,
 					# Filter kwargs
@@ -483,7 +512,10 @@ def analyze_resolution_powers(
 	# Precompute S-matrices
 	S_matrices = {m:{} for m in num_groups}
 	for m, groups in zip(num_groups, all_groups):
-		for rec_prop in [-1]:# + rec_props:
+		rec_props_to_construct = [-1]
+		if 'recycled_new_s' in split_types:
+			rec_props_to_construct = rec_props_to_construct + rec_props
+		for rec_prop in rec_props_to_construct:
 			print(f"Generating S matrix for num_groups={m}, rec_prop={rec_prop} at time={time.time()-time0}")
 			S_EQ = knockadapt.knockoffs.equicorrelated_block_matrix(
 				Sigma=Sigma, groups=groups
@@ -499,6 +531,7 @@ def analyze_resolution_powers(
 				rec_prop=max(0, rec_prop),
 			)
 			S_matrices[m][rec_prop] = group_S_MCV
+		print([(x, np.diag(S_matrices[m][x])) for x in S_matrices[m]])
 	print(f"Finished with S-matrices at {time.time() - time0}")
 
 	### Calculate power of knockoffs for the cutoffs
