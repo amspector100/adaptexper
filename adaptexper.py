@@ -195,6 +195,7 @@ def single_dataset_cutoff_statistics(
 	all_groups,
 	S_matrices,
 	rec_props,
+	split_types,
 ):
 
 	# Sample data, record time, resample beta if beta is None
@@ -207,6 +208,7 @@ def single_dataset_cutoff_statistics(
 		**sample_kwargs
 	)
 	n = X.shape[0]
+	print(f"n is {n}")
 
 	# FDR target level
 	if 'q' in filter_kwargs:
@@ -245,46 +247,20 @@ def single_dataset_cutoff_statistics(
 			filter_kwargs['knockoff_kwargs'] = {'S':S_matrices[m][-1]}
 
 		# Regular filter
-		row = single_cutoff_statistics(
-			p=p,
-			num_groups=num_groups,
-			seed=seed,
-			split_type='regular',
-			rec_prop=-1,
-			cutoff=cutoff,
-			m=m,
-			group_sizes=group_sizes,
-			group_nonnulls=group_nonnulls,
-			# Filter kwargs
-			X=X, 
-			y=y, 
-			mu=np.zeros(p),
-			Sigma=Sigma, 
-			groups=groups,
-			**filter_kwargs
-		)
-		output.loc[counter] = row
-		counter += 1
-
-		# Split / recycled knockoff filters:
-		for rec_prop in rec_props:
-
-			# Split knockoff filter, WITHOUT recycling
-			# S-matrix should NOT account for recycling
-			filter_kwargs['knockoff_kwargs'] = {'S':S_matrices[m][-1]}
+		if split_types[0] is None or 'regular' in split_types:
 			row = single_cutoff_statistics(
 				p=p,
 				num_groups=num_groups,
 				seed=seed,
-				split_type='split',
-				rec_prop=rec_prop,
+				split_type='regular',
+				rec_prop=-1,
 				cutoff=cutoff,
 				m=m,
 				group_sizes=group_sizes,
 				group_nonnulls=group_nonnulls,
 				# Filter kwargs
-				X=X[:int(rec_prop * n)], 
-				y=y[:int(rec_prop * n)], 
+				X=X, 
+				y=y, 
 				mu=np.zeros(p),
 				Sigma=Sigma, 
 				groups=groups,
@@ -293,63 +269,116 @@ def single_dataset_cutoff_statistics(
 			output.loc[counter] = row
 			counter += 1
 
+		# Split / recycled knockoff filters:
+		for rec_prop in rec_props:
+
+			# Split knockoff filter, WITHOUT recycling
+			# S-matrix should NOT account for recycling
+			filter_kwargs['knockoff_kwargs'] = {'S':S_matrices[m][-1]}
+			if split_types[0] is None or 'split' in split_types:
+				row = single_cutoff_statistics(
+					p=p,
+					num_groups=num_groups,
+					seed=seed,
+					split_type='split',
+					rec_prop=rec_prop, # This does NOT cause recycling, it's for logging
+					cutoff=cutoff,
+					m=m,
+					group_sizes=group_sizes,
+					group_nonnulls=group_nonnulls,
+					# Filter kwargs
+					X=X[:int(rec_prop * n)], 
+					y=y[:int(rec_prop * n)], 
+					mu=np.zeros(p),
+					Sigma=Sigma, 
+					groups=groups,
+					**filter_kwargs
+				)
+				output.loc[counter] = row
+				counter += 1
+
+			# Second half of split knockoff filter
+			if split_types[0] is None or 'split2' in split_types:
+				row = single_cutoff_statistics(
+					p=p,
+					num_groups=num_groups,
+					seed=seed,
+					split_type='split2',
+					rec_prop=rec_prop,  # This does NOT cause recycling, it's for logging
+					cutoff=cutoff,
+					m=m,
+					group_sizes=group_sizes,
+					group_nonnulls=group_nonnulls,
+					# Filter kwargs
+					X=X[int(rec_prop * n):], 
+					y=y[int(rec_prop * n):], 
+					mu=np.zeros(p),
+					Sigma=Sigma, 
+					groups=groups,
+					**filter_kwargs
+				)
+				output.loc[counter] = row
+				counter += 1
+
+
 			# Split knockoff filter, WITH recycling
 			# New S-matrix which accounts for recycling
-			#filter_kwargs['knockoff_kwargs'] = {'S':S_matrices[m][rec_prop]}
-			# output.loc[counter] = single_cutoff_statistics(
-			# 	p=p,
-			# 	num_groups=num_groups,
-			# 	seed=seed,
-			# 	split_type='recycled',
-			# 	rec_prop=rec_prop,
-			# 	cutoff=cutoff,
-			# 	m=m,
-			# 	group_sizes=group_sizes,
-			# 	group_nonnulls=group_nonnulls,
-			# 	# Filter kwargs
-			# 	X=X, 
-			# 	y=y, 
-			# 	mu=np.zeros(p),
-			# 	Sigma=Sigma, 
-			# 	groups=groups,
-			# 	recycle_up_to=int(rec_prop * n),
-			# 	**filter_kwargs
-			# )
-			# counter += 1
-
-			# Precycled / recycled filters
-			knockoff_kwargs = filter_kwargs['knockoff_kwargs'].copy()
-			knockoff_kwargs['S'] = S_matrices[m][-1]
-			kbi = knockadapt.adaptive.KnockoffBicycle(
-				knockoff_kwargs=knockoff_kwargs, fixedX=False,
-			)
-			kbi.forward(
-				X=X,
-				y=y,
-				groups=groups,
-				mu=np.zeros(p),
-				Sigma=Sigma,
-				rec_prop=rec_prop,
-				**filter_kwargs
-			)
-			for split_type, kf in zip(
-				['precycled', 'recycled'],
-				[kbi.prefilter, kbi.refilter],
-			):
+			# filter_kwargs['knockoff_kwargs'] = {'S':S_matrices[m][rec_prop]}
+			if split_types[0] is None or 'recycled' in split_types:
 				output.loc[counter] = single_cutoff_statistics(
 					p=p,
 					num_groups=num_groups,
 					seed=seed,
-					split_type=split_type,
+					split_type='recycled',
 					rec_prop=rec_prop,
 					cutoff=cutoff,
 					m=m,
 					group_sizes=group_sizes,
 					group_nonnulls=group_nonnulls,
 					# Filter kwargs
-					knockoff_filter=kf,
+					X=X, 
+					y=y, 
+					mu=np.zeros(p),
+					Sigma=Sigma, 
+					groups=groups,
+					recycle_up_to=int(rec_prop * n),
+					**filter_kwargs
 				)
 				counter += 1
+
+			# # Precycled / recycled filters
+			# knockoff_kwargs = filter_kwargs['knockoff_kwargs'].copy()
+			# knockoff_kwargs['S'] = S_matrices[m][-1]
+			# kbi = knockadapt.adaptive.KnockoffBicycle(
+			# 	knockoff_kwargs=knockoff_kwargs, fixedX=False,
+			# )
+			# kbi.forward(
+			# 	X=X,
+			# 	y=y,
+			# 	groups=groups,
+			# 	mu=np.zeros(p),
+			# 	Sigma=Sigma,
+			# 	rec_prop=rec_prop,
+			# 	**filter_kwargs
+			# )
+			# for split_type, kf in zip(
+			# 	['precycled', 'recycled'],
+			# 	[kbi.prefilter, kbi.refilter],
+			# ):
+			# 	output.loc[counter] = single_cutoff_statistics(
+			# 		p=p,
+			# 		num_groups=num_groups,
+			# 		seed=seed,
+			# 		split_type=split_type,
+			# 		rec_prop=rec_prop,
+			# 		cutoff=cutoff,
+			# 		m=m,
+			# 		group_sizes=group_sizes,
+			# 		group_nonnulls=group_nonnulls,
+			# 		# Filter kwargs
+			# 		knockoff_filter=kf,
+			# 	)
+			# 	counter += 1
 
 	if n == MAXIMUM_N and seed % 10 == 0:
 		print(f"Finished with seed {seed}, took {time.time() - localtime}")
@@ -370,6 +399,7 @@ def calc_cutoff_statistics(
 	seed_start=0,
 	S_matrices={},
 	rec_props=[0.5],
+	split_types=[None],
 ):
 
 	# Fetch nonnulls
@@ -389,6 +419,7 @@ def calc_cutoff_statistics(
 		all_groups=all_groups,
 		S_matrices=S_matrices,
 		rec_props=rec_props,
+		split_types=split_types,
 	)
 	# (Possibly) apply multiprocessing
 	all_inputs = list(range(seed_start, seed_start+reps))
@@ -415,6 +446,7 @@ def analyze_resolution_powers(
 	seed_start,
 	time0,
 	rec_props,
+	split_types,
 ):
 	"""
 	Computes W-statistics and powers for various resolutions
@@ -533,6 +565,7 @@ def analyze_resolution_powers(
 					all_groups=all_groups,
 					S_matrices=S_matrices,
 					rec_props=rec_props,
+					split_types=split_types,
 				)
 				for key in sample_keys:
 					if key in output.columns:
@@ -580,7 +613,7 @@ def parse_args(args):
 	args = args[1:]
 
 	# Initialize kwargs constructor
-	special_keys = ['reps', 'num_processes', 'seed_start', 'description', 'resample_beta', 'rec_props']
+	special_keys = ['reps', 'num_processes', 'seed_start', 'description', 'resample_beta', 'rec_props', 'split_types']
 	key_types = ['dgp', 'sample', 'filter', 'fstat']
 	all_kwargs = {ktype:{} for ktype in key_types}
 	key = None
@@ -694,6 +727,12 @@ def main(args):
 	description = fetch_kwarg(sample_kwargs, 'description', default='')
 	resample_beta = fetch_kwarg(sample_kwargs, 'resample_beta', default=[False])[0]
 	rec_props = fetch_kwarg(sample_kwargs, 'rec_props', default=[0.5])
+	split_types = fetch_kwarg(
+		sample_kwargs,
+		'split_types',
+		default=[None]
+	)
+
 	print(f"DGP kwargs are {dgp_kwargs}")
 	print(f"Sample kwargs are {sample_kwargs}")
 	print(f"Filter kwargs are {filter_kwargs}")
@@ -782,6 +821,7 @@ def main(args):
 			seed_start=seed_start,
 			time0=time0,
 			rec_props=rec_props,
+			split_types=split_types
 		)
 		for key in dgp_keys:
 			if key in sample_kwargs:
