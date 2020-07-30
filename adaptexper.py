@@ -200,6 +200,9 @@ def single_dataset_cutoff_statistics(
 	rec_props,
 	split_types,
 ):
+	# Prevent in-place modifications
+	sample_kwargs = sample_kwargs.copy()
+	filter_kwargs = filter_kwargs.copy()
 
 	# Sample data, record time, resample beta if beta is None
 	p = Sigma.shape[0]
@@ -492,6 +495,8 @@ def analyze_resolution_powers(
 		sample_kwargs['n'] = [
 			int(p/4), int(p/2), int(p/1.5), int(p), int(2*p), int(4*p)
 		]
+	else:
+		sample_kwargs['n'] = [int(n) for n in sample_kwargs['n']]
 	MAXIMUM_N = max(sample_kwargs['n']) # Helpful for logging
 
 	# Construct/iterate cartesian product of sample, filter, fstat kwargs
@@ -707,6 +712,7 @@ def parse_args(args):
 				value = np.linspace(
 					start, end, numvals
 				)
+				value = np.array([obj2int(x) for x in value])
 
 			# Apply obj2int (preserves strings, infers floats, bools, ints)
 			else:
