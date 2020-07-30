@@ -161,7 +161,7 @@ def fetch_competitor_S(
 		print(f'Now computing SDP S matrices, time is {time.time() - time0}')
 	elif verbose:
 		print(f'Now computing ASDP S matrices, time is {time.time() - time0}')
-	for S_method, sdp_tol in zip(['sdp', 'sdp_tol'], [1e-5, 1e-2]):
+	for S_method, sdp_tol in zip(['sdp'], [1e-5]):# ['sdp',sdp_tol'], [1e-5, 1e-2]):
 		_, S_SDP = knockadapt.knockoffs.gaussian_knockoffs(
 			Sigma=Sigma,
 			groups=groups,
@@ -176,21 +176,22 @@ def fetch_competitor_S(
 		print(f'Finished computing SDP matrices, time is {time.time() - time0}')
 
 	### Calculate mcv matrix (nonconvex solver)
-	_, S_MCV = knockadapt.knockoffs.gaussian_knockoffs(
-		Sigma=Sigma,
-		groups=groups,
-		sdp_tol=1e-5,
-		method='mcv',
-		init_S=S_SDP,
-		rec_prop=rej_rate,
-		max_epochs=max_epochs,
-		return_S=True,
-		**kwargs
-	)
-	S_matrices['mcv'] = S_MCV
+	for new_method in ['mcv','maxent']:
+		_, S_MCV = knockadapt.knockoffs.gaussian_knockoffs(
+			Sigma=Sigma,
+			groups=groups,
+			sdp_tol=1e-5,
+			method=new_method,
+			init_S=S_SDP,
+			rec_prop=rej_rate,
+			max_epochs=max_epochs,
+			return_S=True,
+			**kwargs
+		)
+		S_matrices[new_method] = S_MCV
 
 	if verbose:
-		print(f'Finished computing MCV matrix, time is {time.time() - time0}')
+		print(f'Finished computing MCV matrices, time is {time.time() - time0}')
 
 	return S_matrices
 
