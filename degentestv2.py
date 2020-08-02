@@ -883,7 +883,6 @@ def main(args):
 					if len(old_val) != 1:
 						raise ValueError(f"DGP / sample keys {key} conflict when resampling Sigma / beta")
 					old_val = old_val[0]
-					print(old_val, dgp_kwargs[key])
 					if old_val not in dgp_kwargs[key]:
 						raise ValueError(f"DGP / sample keys {key} conflict when resampling Sigma / beta")
 				sample_kwargs[key] = [val]
