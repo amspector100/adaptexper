@@ -26,7 +26,7 @@ from functools import partial
 
 # Global: the set of antisymmetric functions we use
 PAIR_AGGS = ['cd', 'sm']#, 'scd']
-DEFAULT_q = 0.2
+q_values = [0.05, 0.1, 0.15, 0.2]
 
 def fetch_kwarg(kwargs, key, default=None):
 	""" Utility function for parsing """
@@ -233,7 +233,10 @@ def single_dataset_power_fdr(
 	""" Knockoff kwargs should be included in filter_kwargs """
 
 	# Fetch groups, infer q
-	p = Sigma.shape[0]
+	if Sigma is not None:
+		p = Sigma.shape[0]
+	else:
+		p = sample_kwargs['p']
 	if groups is None:
 		groups = np.arange(1, p+1, 1)
 	# Prevent editing
@@ -243,7 +246,7 @@ def single_dataset_power_fdr(
 	# Sample data, record time
 	localtime = time.time()
 	np.random.seed(seed)
-	X, y, beta, _, _ = knockadapt.graphs.sample_data(
+	X, y, beta, Sigma, _ = knockadapt.graphs.sample_data(
 		corr_matrix=Sigma,
 		beta=beta,
 		**sample_kwargs
@@ -253,11 +256,6 @@ def single_dataset_power_fdr(
 	group_nonnulls = knockadapt.utilities.fetch_group_nonnulls(
 		beta, groups
 	)
-	if 'q' in filter_kwargs:
-		q = filter_kwargs['q']
-		filter_kwargs['fdr'] = filter_kwargs.pop('q')
-	else:
-		q = DEFAULT_q
 
 	# Some updates for fixedX knockoffs
 	# and MX knockoffs without parametrization
@@ -284,7 +282,7 @@ def single_dataset_power_fdr(
 		kwargs['fixedX'] = True
 		Sigma = None
 		invSigma = None
-	if infer_sigma or fixedX:
+	if infer_sigma or fixedX or S_matrices is None:
 		print(f"Rej rate is {rej_rate}")
 		verbose = fetch_kwarg(kwargs, 'verbose', default=False)
 		S_matrices = fetch_competitor_S(
@@ -298,7 +296,7 @@ def single_dataset_power_fdr(
 
 	# Now we loop through the S matrices
 	degen_flag = 'sdp_perturbed' in S_matrices 
-	output = {S_method:{} for S_method in S_matrices}
+	output = []
 	for S_method in S_matrices:
 
 		# Pull S matrix
@@ -313,17 +311,20 @@ def single_dataset_power_fdr(
 		if _sdp_degen and 'feature_stat' in filter_kwargs:
 			if filter_kwargs['feature_stat'] == 'dlasso':
 				for pair_agg in PAIR_AGGS:
-					output[S_method][pair_agg] = [
+					output.append([
+						S_method,
 						0,
 						0,
+						q,
 						0,
 						"NULL",
+						pair_agg,
 						np.zeros(p),
 						np.zeros(p),
 						np.zeros(p),
 						np.zeros(p),
 						seed
-					] 
+					])
 				continue
 
 		# Create knockoff_kwargs
@@ -363,28 +364,32 @@ def single_dataset_power_fdr(
 		# Calculate power/fdp/score for a variety of 
 		# antisymmetric functions
 		for pair_agg in PAIR_AGGS:
-			# Start by creating selections
-			selections, W = Z2selections(
-				Z=Z,
-				groups=groups,
-				q=q,
-				pair_agg=pair_agg
-			)
-			# Then create power/fdp
-			power, fdp = selection2power(
-				selections, group_nonnulls
-			)
-			output[S_method][pair_agg] = [
-				power,
-				fdp,
-				score, 
-				score_type,
-				np.around(W, 4),
-				np.around(Z[0:p], 4),
-				np.around(Z[p:], 4),
-				selections,
-				seed,
-			]
+			for q in q_values:
+				# Start by creating selections
+				selections, W = Z2selections(
+					Z=Z,
+					groups=groups,
+					q=q,
+					pair_agg=pair_agg
+				)
+				# Then create power/fdp
+				power, fdp = selection2power(
+					selections, group_nonnulls
+				)
+				output.append([
+					S_method,
+					power,
+					fdp,
+					q,
+					score, 
+					score_type,
+					pair_agg,
+					np.around(W, 4),
+					np.around(Z[0:p], 4),
+					np.around(Z[p:], 4),
+					selections,
+					seed,
+				])
 
 	# Possibly log progress
 	try:
@@ -397,7 +402,7 @@ def single_dataset_power_fdr(
 		pass
 
 	# Output: dict[S_method][pair_agg] to
-	# [power, fdp, score, score_type, W, Z, tildeZ, selection]
+	# [S_method, power, fdp, q, score, score_type, pair_agg, W, Z, tildeZ, selection, seed]
 	return output
 
 def calc_power_and_fdr(
@@ -415,7 +420,10 @@ def calc_power_and_fdr(
 ):
 
 	# Fetch nonnulls
-	p = Sigma.shape[0]
+	if Sigma is not None:
+		p = Sigma.shape[0]
+	else:
+		p = sample_kwargs['p']
 	# Sample data reps times and calc power/fdp
 	partial_sd_power_fdr = partial(
 		single_dataset_power_fdr, 
@@ -437,18 +445,12 @@ def calc_power_and_fdr(
 	)
 
 	# Extract output and return
-	final_out = {S_method:{} for S_method in all_outputs[0]}
-	for S_method in all_outputs[0]:
-		for agg in PAIR_AGGS:
-			final_out[S_method][agg] = []
-			num_columns = len(all_outputs[0][S_method][agg])
-			for col in range(num_columns):
-				final_out[S_method][agg].append(
-					np.array([x[S_method][agg][col] for x in all_outputs])
-				)
+	final_out = []
+	for output in all_outputs:
+		final_out.extend(output)
 
-	# Final out: dict[S_method][pair_agg] to arrays: 
-	# power, fdp, score, score_type, W, Z, tildeZ, selection
+	# Final out: list of arrays: 
+	# S_method, power, fdp, q, score, score_type, pair_agg, W, Z, tildeZ, selection
 	return final_out
 
 def analyze_degen_solns(
@@ -464,6 +466,7 @@ def analyze_degen_solns(
 	seed_start=0,
 	time0=None,
 	S_curve=False,
+	storew=True,
 	):
 	"""
 	:param dgp_number: A number corresponding to which dgp
@@ -478,7 +481,10 @@ def analyze_degen_solns(
 	global MAXIMUM_N # A hack to allow for better logging
 	
 	# Infer p and set n defaults
-	p = Sigma.shape[0]
+	if Sigma is not None:
+		p = Sigma.shape[0]
+	else:
+		p = sample_kwargs['p'][0]
 	sample_kwargs['p'] = [p]
 	if 'n' not in sample_kwargs:
 		sample_kwargs['n'] = [
@@ -497,11 +503,12 @@ def analyze_degen_solns(
 
 	# Initialize final output
 	counter = 0
-	columns = ['power', 'fdp', 'S_method', 'antisym', 'score', 'score_type']
-	columns += [f'W{i}' for i in range(1, p+1)]
-	columns += [f'Z{i}' for i in range(1, p+1)]
-	columns += [f'tildeZ{i}' for i in range(1, p+1)]
-	columns += [f'selection{i}' for i in range(1, p+1)] 
+	columns = ['power', 'fdp', 'q', 'S_method', 'antisym', 'score', 'score_type']
+	if storew:
+		columns += [f'W{i}' for i in range(1, p+1)]
+		columns += [f'Z{i}' for i in range(1, p+1)]
+		columns += [f'tildeZ{i}' for i in range(1, p+1)]
+		columns += [f'selection{i}' for i in range(1, p+1)] 
 	columns += ['dgp_number']
 	columns += sample_keys + filter_keys + fstat_keys + ['seed']
 	result_df = pd.DataFrame(columns=columns)
@@ -525,7 +532,7 @@ def analyze_degen_solns(
 			ground_truth = False
 	else:
 		ground_truth = True
-	if ground_truth and MX_flag:
+	if ground_truth and MX_flag and Sigma is not None:
 		rej_rate = fetch_kwarg(filter_kwargs, 'rej_rate', default=[0])[0]
 		print(f"Storing SDP/MCV results with rej_rate={rej_rate}")
 		S_matrices = fetch_competitor_S(
@@ -540,7 +547,7 @@ def analyze_degen_solns(
 		print(f"Not storing SDP/MCV results")
 		# This signals to the further functions which S_methods
 		# to expect to fit
-		S_matrices = {'sdp_tol':None, 'sdp':None, 'mcv':None}
+		S_matrices = None
 
 	### Calculate power of knockoffs for the two different methods
 	for filter_vals in filter_product:
@@ -605,19 +612,18 @@ def analyze_degen_solns(
 				)
 
 				# Loop through antisymmetric functions and S matrices
-				for S_method in out:
-					for agg in PAIR_AGGS:
-						for vals in zip(*out[S_method][agg]):
-							power, fdp, score, score_type, W, Z, tildeZ, selections, seed = vals
-							row = [power, fdp, S_method, agg, score, score_type] 
-							row.extend(W.tolist())
-							row.extend(Z.tolist())
-							row.extend(tildeZ.tolist())
-							row.extend(selections.astype(np.int32).tolist())
-							row += [dgp_number]
-							row += sample_vals + filter_vals + fstat_vals + [seed]
-							result_df.loc[counter] = row 
-							counter += 1
+				for vals in out:
+					S_method, power, fdp, q, score, score_type, agg, W, Z, tildeZ, selections, seed = vals
+					row = [power, fdp, q, S_method, agg, score, score_type] 
+					if storew:
+						row.extend(W.tolist())
+						row.extend(Z.tolist())
+						row.extend(tildeZ.tolist())
+						row.extend(selections.astype(np.int32).tolist())
+					row += [dgp_number]
+					row += sample_vals + filter_vals + fstat_vals + [seed]
+					result_df.loc[counter] = row 
+					counter += 1
 
 	return result_df, S_matrices
 
@@ -649,7 +655,10 @@ def parse_args(args):
 	args = args[1:]
 
 	# Initialize kwargs constructor
-	special_keys = ['reps', 'num_processes', 'seed_start', 'description', 's_curve', 'resample_beta']
+	special_keys = [
+		'reps', 'num_processes', 'seed_start', 'description',
+		's_curve', 'resample_beta', 'resample_sigma', 'storew'
+	]
 	key_types = ['dgp', 'sample', 'filter', 'fstat']
 	all_kwargs = {ktype:{} for ktype in key_types}
 	key = None
@@ -761,7 +770,9 @@ def main(args):
 	seed_start = fetch_kwarg(sample_kwargs, 'seed_start', default=[0])[0]
 	description = fetch_kwarg(sample_kwargs, 'description', default='')
 	S_curve = fetch_kwarg(sample_kwargs, 's_curve', default=[False])[0]
-	resample_beta = fetch_kwarg(sample_kwargs, 'resample_beta', default=[False])[0]
+	resample_beta = fetch_kwarg(sample_kwargs, 'resample_beta', default=[True])[0]
+	resample_sigma = fetch_kwarg(sample_kwargs, 'resample_sigma', default=[False])[0]
+	storew = fetch_kwarg(sample_kwargs, 'storew', default=[False])[0]
 	print(f"S_curve flag = {S_curve}")
 	print(f"DGP kwargs are {dgp_kwargs}")
 	print(f"Sample kwargs are {sample_kwargs}")
@@ -862,9 +873,16 @@ def main(args):
 			beta_df.loc[dgp_number] = beta
 			beta_df.to_csv(beta_path)
 
+		# Push sample_kwargs to full output
+		if resample_beta or resample_sigma:
+			for key in new_dgp_kwargs:
+				if key in sample_kwargs:
+					raise ValueError(f"DGP / sample keys {key} conflict when resampling Sigma / beta")
+				sample_kwargs[key] = [new_dgp_kwargs[key]]
+
 		# Create results
 		result, S_matrices = analyze_degen_solns(
-			Sigma=Sigma,
+			Sigma=Sigma if not resample_sigma else None,
 			beta = beta if not resample_beta else None,
 			dgp_number=dgp_number,
 			groups=None,
@@ -875,7 +893,8 @@ def main(args):
 			num_processes=num_processes,
 			seed_start=seed_start,
 			time0=time0,
-			S_curve=S_curve
+			S_curve=S_curve,
+			storew=storew
 		)
 		for key in dgp_keys:
 			if key in sample_kwargs:
@@ -888,19 +907,21 @@ def main(args):
 		all_results.to_csv(output_path)
 
 		# Cache S outputs
-		for S_method in S_matrices:
-			S = S_matrices[S_method]
-			if S is None:
-				continue
-			S_diag = np.diag(S)
-			S_diags_df.loc[S_counter] = [dgp_number, S_method] + S_diag.tolist()
-			S_counter += 1
-		S_diags_df.to_csv(S_path)
+		if S_matrices is not None:
+			for S_method in S_matrices:
+				S = S_matrices[S_method]
+				if S is None:
+					continue
+				S_diag = np.diag(S)
+				S_diags_df.loc[S_counter] = [dgp_number, S_method] + S_diag.tolist()
+				S_counter += 1
+			S_diags_df.to_csv(S_path)
 
 		# Increment dgp number
 		dgp_number += 1
 
-	print(all_results[['power', 'fdp', 'S_method', 'antisym', 'seed', 'feature_stat']])
+	print(all_results[['power', 'fdp', 'q', 'S_method', 'antisym', 'seed', 'feature_stat']])
+	print(all_results.groupby(['q', 'S_method', 'antisym'])['power', 'fdp'].mean())
 	return all_results
 
 if __name__ == '__main__':
