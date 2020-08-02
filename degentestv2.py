@@ -424,6 +424,7 @@ def calc_power_and_fdr(
 		p = Sigma.shape[0]
 	else:
 		p = sample_kwargs['p']
+
 	# Sample data reps times and calc power/fdp
 	partial_sd_power_fdr = partial(
 		single_dataset_power_fdr, 
@@ -876,9 +877,16 @@ def main(args):
 		# Push sample_kwargs to full output
 		if resample_beta or resample_sigma:
 			for key in new_dgp_kwargs:
+				val = new_dgp_kwargs[key]
 				if key in sample_kwargs:
-					raise ValueError(f"DGP / sample keys {key} conflict when resampling Sigma / beta")
-				sample_kwargs[key] = [new_dgp_kwargs[key]]
+					old_val = sample_kwargs[key]
+					if len(old_val) != 1:
+						raise ValueError(f"DGP / sample keys {key} conflict when resampling Sigma / beta")
+					old_val = old_val[0]
+					print(old_val, dgp_kwargs[key])
+					if old_val not in dgp_kwargs[key]:
+						raise ValueError(f"DGP / sample keys {key} conflict when resampling Sigma / beta")
+				sample_kwargs[key] = [val]
 
 		# Create results
 		result, S_matrices = analyze_degen_solns(
