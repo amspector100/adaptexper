@@ -123,16 +123,16 @@ def fetch_competitor_S(
 				if np.all(Sigma==equicorr):
 					print(f"Sigma is equicorr (rho={rho}), using analytical solution")
 					S_SDP = min(1, 2-2*rho)*np.eye(p)
-					scale_MCV = (1-rho)
-					S_MCV = scale_MCV*np.eye(p)
+					scale_mvr = (1-rho)
+					S_mvr = scale_mvr*np.eye(p)
 					if rho < 0.5:
-						return {'sdp':S_SDP, 'mcv':S_MCV}
+						return {'sdp':S_SDP, 'mvr':S_mvr}
 					else:
 						S_SDP_perturbed = S_SDP*(0.99)
 						return {
 						'sdp':S_SDP, 
 						'sdp_perturbed':S_SDP_perturbed, 
-						'mcv':S_MCV
+						'mvr':S_mvr
 						}
 
 	### Calculate (A)SDP S-matrix
@@ -395,7 +395,7 @@ def calc_power_and_fdr(
 	sample_kwargs={},
 	filter_kwargs={},
 	seed_start=0,
-	S_matrices={'sdp':None, 'mcv':None},
+	S_matrices={'sdp':None, 'mvr':None},
 ):
 
 	# Fetch nonnulls
@@ -498,7 +498,7 @@ def analyze_degen_solns(
 	
 	# Check if we are going to ever fit MX knockoffs on the
 	# "ground truth" covariance matrix. If so, we'll memoize
-	# the SDP/MCV results.
+	# the SDP/mvr results.
 	if 'fixedx' in filter_kwargs:
 		fixedX_vals = filter_kwargs['fixedx']
 		if False in fixedX_vals:
@@ -517,7 +517,7 @@ def analyze_degen_solns(
 		ground_truth = True
 	if ground_truth and MX_flag and Sigma is not None:
 		rej_rate = fetch_kwarg(filter_kwargs, 'rej_rate', default=[0])[0]
-		print(f"Storing SDP/MCV results with rej_rate={rej_rate}")
+		print(f"Storing SDP/MVR results with rej_rate={rej_rate}")
 		S_matrices = fetch_competitor_S(
 			Sigma=Sigma,
 			groups=groups,
@@ -527,7 +527,7 @@ def analyze_degen_solns(
 			verbose=True,
 		)
 	else:
-		print(f"Not storing SDP/MCV results")
+		print(f"Not storing SDP/MVR results")
 		# This signals to the further functions which S_methods
 		# to expect to fit
 		S_matrices = None
