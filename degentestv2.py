@@ -92,28 +92,17 @@ def fetch_competitor_S(
 	groups,
 	time0,
 	S_curve=False,
-	rej_rate=0,
-	max_epochs=200,
 	verbose=False,
 	**kwargs
 ):
 	"""
 	:param rej_rate: A guess / estimate of the rejection
-	rate. 
+	rate. (This is an important kwarg.)
 	"""
-
 	# If S_curve is true, just do gamma * I for many gammas
-	if Sigma is not None:
-		p = Sigma.shape[0]
-	else:
-		if 'X' not in kwargs:
-			raise ValueError(
-				f"One of Sigma or X must be provided"
-			)
-		p = kwargs['X'].shape[1]
+	p = Sigma.shape[0]
 	fetch_kwarg(kwargs, 'sdp_tol', None) # Prevent double arg errors
 	if S_curve:
-		Sigma.shape[0]
 		mineig = np.linalg.eigh(Sigma)[0].min()
 		gammas = 2*mineig*np.arange(0, 11, 1)/10
 		gammas[0] += 0.001
@@ -122,7 +111,6 @@ def fetch_competitor_S(
 			f'S{gamma}':gamma*np.eye(p) for gamma in gammas
 		}
 		return S_matrices
-
 
 	### Special case: detect if Sigma is equicorrelated,
 	# in which case we can calculate the solution analytically
@@ -137,7 +125,6 @@ def fetch_competitor_S(
 					S_SDP = min(1, 2-2*rho)*np.eye(p)
 					scale_MCV = (1-rho)
 					S_MCV = scale_MCV*np.eye(p)
-					print(S_MCV)
 					if rho < 0.5:
 						return {'sdp':S_SDP, 'mcv':S_MCV}
 					else:
@@ -149,49 +136,43 @@ def fetch_competitor_S(
 						}
 
 	### Calculate (A)SDP S-matrix
-	# Dummy x matrix to satisfy kwargs.
-	if 'X' not in kwargs:
-		kwargs['X'] = np.random.randn(10, p)
 	if time0 is None:
 		time0 = time.time() 
 
 	# Initialize result and compute SDP matrices
 	S_matrices = {}
-	if verbose and p <= 500:
-		print(f'Now computing SDP S matrices, time is {time.time() - time0}')
-	elif verbose:
-		print(f'Now computing ASDP S matrices, time is {time.time() - time0}')
+	sdp_method = 'ASDP' if p > 500 else 'SDP'
+	if verbose:
+		(f'Now computing SDP S matrices, time is {time.time() - time0}')
 	for S_method, sdp_tol in zip(['sdp'], [1e-5]):# ['sdp',sdp_tol'], [1e-5, 1e-2]):
-		_, S_SDP = knockadapt.knockoffs.gaussian_knockoffs(
+		S_SDP = knockadapt.knockoffs.compute_S_matrix(
 			Sigma=Sigma,
 			groups=groups,
 			max_block=501, 
 			sdp_tol=sdp_tol,
 			method='sdp' if p <= 500 else 'asdp',
-			return_S=True,
 			**kwargs
 		)
 		S_matrices[S_method] = S_SDP
 	if verbose:
 		print(f'Finished computing SDP matrices, time is {time.time() - time0}')
 
-	### Calculate mcv matrix (nonconvex solver)
-	for new_method in ['mcv','maxent']:
-		_, S_MCV = knockadapt.knockoffs.gaussian_knockoffs(
+	### Calculate mcr matrices
+	rej_rate = fetch_kwarg(kwargs, 'rej_rate', 0)
+	if rej_rate != 0:
+		kwargs['rej_rate'] = rej_rate
+	for new_method in ['mvr','maxent']:
+		S_MRC = knockadapt.knockoffs.compute_S_matrix(
 			Sigma=Sigma,
 			groups=groups,
-			sdp_tol=1e-5,
 			method=new_method,
-			init_S=S_SDP,
-			rec_prop=rej_rate,
-			max_epochs=max_epochs,
-			return_S=True,
+			solver='cd' if rej_rate == 0 else 'psgd',
 			**kwargs
 		)
-		S_matrices[new_method] = S_MCV
+		S_matrices[new_method] = S_MRC
 
 	if verbose:
-		print(f'Finished computing MCV matrices, time is {time.time() - time0}')
+		print(f'Finished computing MRC matrices, time is {time.time() - time0}')
 
 	return S_matrices
 
@@ -278,9 +259,7 @@ def single_dataset_power_fdr(
 		Sigma = utilities.cov2corr(Sigma)
 		invSigma = utilities.chol2inv(Sigma)
 	if fixedX:
-		kwargs['X'] = X
-		kwargs['fixedX'] = True
-		Sigma = None
+		Sigma = np.dot(X.T, X)
 		invSigma = None
 	if infer_sigma or fixedX or S_matrices is None:
 		print(f"Rej rate is {rej_rate}")
@@ -485,7 +464,10 @@ def analyze_degen_solns(
 	if Sigma is not None:
 		p = Sigma.shape[0]
 	else:
-		p = sample_kwargs['p'][0]
+		p = sample_kwargs['p']
+		if isinstance(p, list):
+			p = p[0]
+
 	sample_kwargs['p'] = [p]
 	if 'n' not in sample_kwargs:
 		sample_kwargs['n'] = [
@@ -767,7 +749,7 @@ def main(args):
 
 	# Parse some special non-graph kwargs
 	reps = fetch_kwarg(sample_kwargs, 'reps', default=[50])[0]
-	num_processes = fetch_kwarg(sample_kwargs, 'num_processes', default=[5])[0]
+	num_processes = fetch_kwarg(sample_kwargs, 'num_processes', default=[12])[0]
 	seed_start = fetch_kwarg(sample_kwargs, 'seed_start', default=[0])[0]
 	description = fetch_kwarg(sample_kwargs, 'description', default='')
 	S_curve = fetch_kwarg(sample_kwargs, 's_curve', default=[False])[0]
