@@ -227,7 +227,7 @@ def single_dataset_power_fdr(
 	# Sample data, record time
 	localtime = time.time()
 	np.random.seed(seed)
-	X, y, beta, Sigma, _ = knockadapt.graphs.sample_data(
+	X, y, beta, _, Sigma = knockadapt.graphs.sample_data(
 		corr_matrix=Sigma,
 		beta=beta,
 		**sample_kwargs
@@ -911,6 +911,8 @@ def main(args):
 
 	print(all_results[['power', 'fdp', 'q', 'S_method', 'antisym', 'seed', 'feature_stat']])
 	print(all_results.groupby(['q', 'S_method', 'antisym'])['power', 'fdp'].mean())
+	print("STANDARD DEVIATIONS:")
+	print(all_results.groupby(['q', 'S_method', 'antisym'])['power', 'fdp'].std() / np.sqrt(reps))
 	return all_results
 
 if __name__ == '__main__':
