@@ -27,6 +27,7 @@ from functools import partial
 # Global: the set of antisymmetric functions we use
 PAIR_AGGS = ['cd', 'sm']#, 'scd']
 q_values = [0.05, 0.1, 0.15, 0.2]
+DEFAULT_DF_T = knockadapt.graphs.DEFAULT_DF_T
 
 def fetch_kwarg(kwargs, key, default=None):
 	""" Utility function for parsing """
@@ -93,6 +94,7 @@ def fetch_competitor_S(
 	time0,
 	S_curve=False,
 	verbose=False,
+	compute_maxent=False,
 	**kwargs
 ):
 	"""
@@ -162,6 +164,10 @@ def fetch_competitor_S(
 	if rej_rate != 0:
 		kwargs['rej_rate'] = rej_rate
 	for new_method in ['mvr','maxent']:
+
+		if not compute_maxent and new_method == 'maxent':
+			continue
+
 		S_MRC = knockadapt.knockoffs.compute_S_matrix(
 			Sigma=Sigma,
 			groups=groups,
@@ -210,6 +216,7 @@ def single_dataset_power_fdr(
 	},
 	S_matrices=None,
 	time0=None,
+	compute_maxent=False,
 ):
 	""" Knockoff kwargs should be included in filter_kwargs """
 
@@ -270,6 +277,7 @@ def single_dataset_power_fdr(
 			time0=time0,
 			rej_rate=rej_rate,
 			verbose=verbose,
+			compute_maxent=compute_maxent,
 			**kwargs
 		)
 
@@ -323,7 +331,7 @@ def single_dataset_power_fdr(
 				if 'df_t' in sample_kwargs:
 					filter_kwargs['knockoff_kwargs']['df_t'] = sample_kwargs['df_t']
 				else:
-					filter_kwargs['knockoff_kwargs']['df_t'] = 5 # This matters
+					filter_kwargs['knockoff_kwargs']['df_t'] = DEFAULT_DF_T # This matters
 
 		# Run MX knockoff filter to obtain
 		# Z statistics
@@ -396,6 +404,7 @@ def calc_power_and_fdr(
 	filter_kwargs={},
 	seed_start=0,
 	S_matrices={'sdp':None, 'mvr':None},
+	compute_maxent=False,
 ):
 
 	# Fetch nonnulls
@@ -413,7 +422,8 @@ def calc_power_and_fdr(
 		sample_kwargs=sample_kwargs,
 		filter_kwargs=filter_kwargs,
 		S_matrices=S_matrices,
-		time0=time0
+		time0=time0,
+		compute_maxent=compute_maxent,
 	)
 	# (Possibly) apply multiprocessing
 	all_inputs = list(range(seed_start, seed_start+reps))
@@ -447,6 +457,7 @@ def analyze_degen_solns(
 	time0=None,
 	S_curve=False,
 	storew=True,
+	compute_maxent=False,
 	):
 	"""
 	:param dgp_number: A number corresponding to which dgp
@@ -525,6 +536,7 @@ def analyze_degen_solns(
 			S_curve=S_curve,
 			rej_rate=rej_rate,
 			verbose=True,
+			compute_maxent=compute_maxent,
 		)
 	else:
 		print(f"Not storing SDP/MVR results")
@@ -592,6 +604,7 @@ def analyze_degen_solns(
 					seed_start=seed_start,
 					time0=time0,
 					S_matrices=S_matrices,
+					compute_maxent=compute_maxent,
 				)
 
 				# Loop through antisymmetric functions and S matrices
@@ -640,7 +653,8 @@ def parse_args(args):
 	# Initialize kwargs constructor
 	special_keys = [
 		'reps', 'num_processes', 'seed_start', 'description',
-		's_curve', 'resample_beta', 'resample_sigma', 'storew'
+		's_curve', 'resample_beta', 'resample_sigma', 'storew',
+		'compute_maxent'
 	]
 	key_types = ['dgp', 'sample', 'filter', 'fstat']
 	all_kwargs = {ktype:{} for ktype in key_types}
@@ -756,6 +770,7 @@ def main(args):
 	resample_beta = fetch_kwarg(sample_kwargs, 'resample_beta', default=[True])[0]
 	resample_sigma = fetch_kwarg(sample_kwargs, 'resample_sigma', default=[False])[0]
 	storew = fetch_kwarg(sample_kwargs, 'storew', default=[False])[0]
+	compute_maxent = fetch_kwarg(sample_kwargs, 'compute_maxent', default=[False])[0]
 	print(f"S_curve flag = {S_curve}")
 	print(f"DGP kwargs are {dgp_kwargs}")
 	print(f"Sample kwargs are {sample_kwargs}")
@@ -883,7 +898,8 @@ def main(args):
 			seed_start=seed_start,
 			time0=time0,
 			S_curve=S_curve,
-			storew=storew
+			storew=storew,
+			compute_maxent=compute_maxent
 		)
 		for key in dgp_keys:
 			if key in sample_kwargs:
