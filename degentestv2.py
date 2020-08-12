@@ -167,12 +167,17 @@ def fetch_competitor_S(
 
 		if not compute_maxent and new_method == 'maxent':
 			continue
+		# This part not implemented yet
+		if compute_maxent and rej_rate != 0:
+			solver = 'psgd'
+		else:
+			solver = 'cd'
 
 		S_MRC = knockadapt.knockoffs.compute_S_matrix(
 			Sigma=Sigma,
 			groups=groups,
 			method=new_method,
-			solver='cd' if rej_rate == 0 else 'psgd',
+			solver=solver,
 			**kwargs
 		)
 		S_matrices[new_method] = S_MRC
