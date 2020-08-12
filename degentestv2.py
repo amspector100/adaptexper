@@ -326,7 +326,6 @@ def single_dataset_power_fdr(
 		# Note split deals with _smoothed 
 		filter_kwargs['knockoff_kwargs']['method'] = S_method.split('_')[0]
 		filter_kwargs['knockoff_kwargs']['_sdp_degen'] = _sdp_degen
-		filter_kwargs['knockoff_kwargs']['max_epochs'] = 150
 		if 'verbose' not in filter_kwargs['knockoff_kwargs']:
 			filter_kwargs['knockoff_kwargs']['verbose'] = False
 
