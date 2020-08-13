@@ -58,7 +58,10 @@ def obj2int(v):
 
 def val2list(val):
 	""" Turns discrete values into lists, otherwise returns """
-	if not (isinstance(val, list) or isinstance(val, np.ndarray)):
+	if not isinstance(val, list):
+		if isinstance(val, np.ndarray):
+			if len(val.shape) == 1:
+				return val
 		return [val] 
 	return val
 
@@ -331,6 +334,8 @@ def single_dataset_power_fdr(
 
 		# Pass a few parameters to metro sampler
 		if 'x_dist' in sample_kwargs:
+			if 'gibbs_graph' in sample_kwargs:
+				filter_kwargs['knockoff_kwargs']['gibbs_graph'] = sample_kwargs['gibbs_graph']
 			if str(sample_kwargs['x_dist']).lower() in ['ar1t', 'blockt']:
 				if 'df_t' in sample_kwargs:
 					filter_kwargs['knockoff_kwargs']['df_t'] = sample_kwargs['df_t']
@@ -508,7 +513,8 @@ def analyze_degen_solns(
 		columns += [f'tildeZ{i}' for i in range(1, p+1)]
 		columns += [f'selection{i}' for i in range(1, p+1)] 
 	columns += ['dgp_number']
-	columns += sample_keys + filter_keys + fstat_keys + ['seed']
+	columns += [x for x in sample_keys if x != 'gibbs_graph']
+	columns += filter_keys + fstat_keys + ['seed']
 	result_df = pd.DataFrame(columns=columns)
 	
 	# Check if we are going to ever fit MX knockoffs on the
@@ -621,7 +627,10 @@ def analyze_degen_solns(
 						row.extend(tildeZ.tolist())
 						row.extend(selections.astype(np.int32).tolist())
 					row += [dgp_number]
-					row += sample_vals + filter_vals + fstat_vals + [seed]
+					sample_vals_to_add = [
+						sample_vals[i] for i in range(len(sample_vals)) if sample_keys[i] != 'gibbs_graph'
+					] 
+					row += sample_vals_to_add + filter_vals + fstat_vals + [seed]
 					result_df.loc[counter] = row 
 					counter += 1
 
@@ -851,7 +860,7 @@ def main(args):
 		new_dgp_kwargs = {key:val for key,val in zip(dgp_keys, dgp_vals)}
 		print(f"DGP kwargs are now: {new_dgp_kwargs}")
 		np.random.seed(110)
-		_, _, beta, _, Sigma = knockadapt.graphs.sample_data(
+		_, _, beta, invSigma, Sigma = knockadapt.graphs.sample_data(
 			**new_dgp_kwargs
 		)
 
@@ -869,6 +878,8 @@ def main(args):
 						Sigma = np.loadtxt(f'{file_dir}/qcache/vout{p}.txt')
 					else:
 						print(f"No custom Sigma available for gibbs ising model: using default")
+			# Save gibbs_graph
+			sample_kwargs['gibbs_graph'] = [invSigma]
 
 		# Cache beta
 		if not resample_beta:
