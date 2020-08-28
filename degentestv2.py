@@ -545,7 +545,7 @@ def analyze_degen_solns(
 	# Possibly save S-matrices
 	if ground_truth and MX_flag and Sigma is not None:
 		rej_rate = fetch_kwarg(filter_kwargs, 'rej_rate', default=[0])[0]
-		print(f"Storing SDP/MVR results with rej_rate={rej_rate}")
+		print(f"Storing SDP/MVR/MMI results with rej_rate={rej_rate}")
 		S_matrices = fetch_competitor_S(
 			Sigma=Sigma,
 			groups=groups,
@@ -780,15 +780,15 @@ def main(args):
 		raise ValueError("y_dist ought to be in sample_kwargs")
 
 	# Parse some special non-graph kwargs
-	reps = fetch_kwarg(sample_kwargs, 'reps', default=[50])[0]
+	reps = fetch_kwarg(sample_kwargs, 'reps', default=[1])[0]
 	num_processes = fetch_kwarg(sample_kwargs, 'num_processes', default=[12])[0]
 	seed_start = fetch_kwarg(sample_kwargs, 'seed_start', default=[0])[0]
 	description = fetch_kwarg(sample_kwargs, 'description', default='')
 	S_curve = fetch_kwarg(sample_kwargs, 's_curve', default=[False])[0]
 	resample_beta = fetch_kwarg(sample_kwargs, 'resample_beta', default=[True])[0]
-	resample_sigma = fetch_kwarg(sample_kwargs, 'resample_sigma', default=[False])[0]
+	resample_sigma = fetch_kwarg(sample_kwargs, 'resample_sigma', default=[True])[0]
 	storew = fetch_kwarg(sample_kwargs, 'storew', default=[False])[0]
-	compute_maxent = fetch_kwarg(sample_kwargs, 'compute_maxent', default=[False])[0]
+	compute_maxent = fetch_kwarg(sample_kwargs, 'compute_maxent', default=[True])[0]
 	print(f"S_curve flag = {S_curve}")
 	print(f"DGP kwargs are {dgp_kwargs}")
 	print(f"Sample kwargs are {sample_kwargs}")
@@ -801,7 +801,7 @@ def main(args):
 	today = str(datetime.date.today())
 	hour = str(datetime.datetime.today().time())
 	hour = hour.replace(':','-').split('.')[0]
-	output_path = f'data/degentestv3/{today}/{hour}'
+	output_path = f'data/mrcfinal/{today}/{hour}'
 	all_key_types = ['dgp', 'sample', 'filter', 'fstat']
 	all_kwargs = [dgp_kwargs,sample_kwargs, filter_kwargs, fstat_kwargs]
 
@@ -816,7 +816,7 @@ def main(args):
 	output_path += f'seedstart{seed_start}_reps{reps}_results.csv'
 	beta_path = output_path.split('.csv')[0] + '_betas.csv'
 	S_path = output_path.split('.csv')[0] + '_S.csv'
-	description_path = f'data/degentestv3/{today}/{hour}/' + 'description.txt'
+	description_path = f'data/mrcfinal/{today}/{hour}/' + 'description.txt'
 	output_dir = os.path.dirname(output_path)
 	if not os.path.exists(output_dir):
 		os.makedirs(output_dir)
@@ -947,10 +947,10 @@ def main(args):
 
 	# Print average result (fairly unsophisticated, this is not how we actually
 	# generate our graphs)
-	print(all_results[['power', 'fdp', 'q', 'S_method', 'antisym', 'seed', 'feature_stat']])
-	print(all_results.groupby(['q', 'S_method', 'antisym'])['power', 'fdp'].mean())
-	print("STANDARD DEVIATIONS:")
-	print(all_results.groupby(['q', 'S_method', 'antisym'])['power', 'fdp'].std() / np.sqrt(reps))
+	#print(all_results[['power', 'fdp', 'q', 'S_method', 'antisym', 'seed', 'feature_stat']])
+	#print(all_results.groupby(['q', 'S_method', 'antisym'])['power', 'fdp'].mean())
+	#print("STANDARD DEVIATIONS:")
+	#print(all_results.groupby(['q', 'S_method', 'antisym'])['power', 'fdp'].std() / np.sqrt(reps))
 	return all_results
 
 if __name__ == '__main__':
