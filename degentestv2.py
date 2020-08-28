@@ -25,8 +25,10 @@ from multiprocessing import Pool
 from functools import partial
 
 # Global: the set of antisymmetric functions we use
-PAIR_AGGS = ['cd', 'sm']#, 'scd']
+PAIR_AGGS = ['cd', 'sm']
+# q-values to evaluate for
 q_values = [0.05, 0.1, 0.15, 0.2]
+# Degrees of freedom for t-distributions
 DEFAULT_DF_T = knockadapt.graphs.DEFAULT_DF_T
 
 def fetch_kwarg(kwargs, key, default=None):
@@ -101,8 +103,7 @@ def fetch_competitor_S(
 	**kwargs
 ):
 	"""
-	:param rej_rate: A guess / estimate of the rejection
-	rate. (This is an important kwarg.)
+	Creates various different S-matrices.
 	"""
 	# If S_curve is true, just do gamma * I for many gammas
 	p = Sigma.shape[0]
@@ -144,38 +145,38 @@ def fetch_competitor_S(
 	if time0 is None:
 		time0 = time.time() 
 
-	# Initialize result and compute SDP matrices
+	# Compute SDP matrix
 	S_matrices = {}
-	sdp_method = 'ASDP' if p > 500 else 'SDP'
 	if verbose:
 		(f'Now computing SDP S matrices, time is {time.time() - time0}')
-	for S_method, sdp_tol in zip(['sdp'], [1e-5]):# ['sdp',sdp_tol'], [1e-5, 1e-2]):
-		S_SDP = knockadapt.knockoffs.compute_S_matrix(
-			Sigma=Sigma,
-			groups=groups,
-			max_block=501, 
-			sdp_tol=sdp_tol,
-			method='sdp' if p <= 500 else 'asdp',
-			**kwargs
-		)
-		S_matrices[S_method] = S_SDP
+	S_SDP = knockadapt.knockoffs.compute_S_matrix(
+		Sigma=Sigma,
+		groups=groups,
+		max_block=501, 
+		sdp_tol=1e-5,
+		method='sdp' if p <= 500 else 'asdp',
+		**kwargs
+	)
+	S_matrices['sdp'] = S_SDP
 	if verbose:
 		print(f'Finished computing SDP matrices, time is {time.time() - time0}')
 
-	### Calculate mcr matrices
+	### Calculate MCR matrices
 	rej_rate = fetch_kwarg(kwargs, 'rej_rate', 0)
 	if rej_rate != 0:
 		kwargs['rej_rate'] = rej_rate
 	for new_method in ['mvr','maxent']:
 
+		# Sometimes, we only compute MVR and not maxent
 		if not compute_maxent and new_method == 'maxent':
 			continue
-		# This part not implemented yet
+
+		# Choose between projected gradient decent and coord descent
+		# solvers
 		if compute_maxent and rej_rate != 0:
 			solver = 'psgd'
 		else:
 			solver = 'cd'
-
 		S_MRC = knockadapt.knockoffs.compute_S_matrix(
 			Sigma=Sigma,
 			groups=groups,
@@ -184,7 +185,6 @@ def fetch_competitor_S(
 			**kwargs
 		)
 		S_matrices[new_method] = S_MRC
-
 	if verbose:
 		print(f'Finished computing MRC matrices, time is {time.time() - time0}')
 
@@ -226,7 +226,9 @@ def single_dataset_power_fdr(
 	time0=None,
 	compute_maxent=False,
 ):
-	""" Knockoff kwargs should be included in filter_kwargs """
+	""" 
+	Knockoff kwargs should be included in filter_kwargs
+	"""
 
 	# Fetch groups, infer q
 	if Sigma is not None:
@@ -235,7 +237,8 @@ def single_dataset_power_fdr(
 		p = sample_kwargs['p']
 	if groups is None:
 		groups = np.arange(1, p+1, 1)
-	# Prevent editing
+
+	# Prevent global changes to kwargs
 	filter_kwargs = filter_kwargs.copy()
 	sample_kwargs = sample_kwargs.copy()
 
@@ -248,36 +251,39 @@ def single_dataset_power_fdr(
 		**sample_kwargs
 	)
 
-	# Parse nonnulls and q
+	# Parse nonnulls (this allows for group knockoffs although
+	# we do not actually use this in our experiments)
 	group_nonnulls = knockadapt.utilities.fetch_group_nonnulls(
 		beta, groups
 	)
 
 	# Some updates for fixedX knockoffs
-	# and MX knockoffs without parametrization
+	# and MX knockoffs when Sigma must be inferred
 	fixedX = fetch_kwarg(filter_kwargs, 'fixedx', default=False)
 	infer_sigma = fetch_kwarg(filter_kwargs, 'infer_sigma', default=False)
 
 	# For the metro sampler, we can compute better S matrices if we have a 
-	# guess or estimate of the rejection rate
+	# guess of the rejection rate. We do not use this in our experiments
+	# by default.
 	rej_rate = fetch_kwarg(filter_kwargs, 'rej_rate', default=0)
 
-	# In particular, we want to calculate S matrices
-	# if we do not already know them.
+	# We calculate S-matrices if we do not already know them.
 	if 'knockoff_kwargs' in filter_kwargs:
 		kwargs = filter_kwargs['knockoff_kwargs']
 	else:
 		kwargs = {}
+	# Case 1: We have to estimate Sigma from the data
 	if infer_sigma:
 		shrinkage = fetch_kwarg(filter_kwargs, 'shrinkage', default='ledoitwolf')
 		Sigma, _ = knockadapt.utilities.estimate_covariance(X, shrinkage=shrinkage)
 		Sigma = utilities.cov2corr(Sigma)
 		invSigma = utilities.chol2inv(Sigma)
+	# Case 2: We are running FX knockoffs
 	if fixedX:
 		Sigma = np.dot(X.T, X)
 		invSigma = None
+	# Calculate S-matrices from Sigma
 	if infer_sigma or fixedX or S_matrices is None:
-		print(f"Rej rate is {rej_rate}")
 		verbose = fetch_kwarg(kwargs, 'verbose', default=False)
 		S_matrices = fetch_competitor_S(
 			Sigma=Sigma, 
@@ -298,11 +304,11 @@ def single_dataset_power_fdr(
 		S = S_matrices[S_method]
 
 		# If the method produces fully degenerate knockoffs,
-		# signal this as part of the filter kwargs
+		# signal this as part of the filter kwargs.
 		_sdp_degen = (degen_flag and S_method == 'sdp')
 
 		# Do NOT run OLS or debiased lasso for degenerate case,
-		# because the model is unidentifiable
+		# because this will lead to linear algebra errors.
 		if _sdp_degen and 'feature_stat' in filter_kwargs:
 			if filter_kwargs['feature_stat'] == 'dlasso':
 				for pair_agg in PAIR_AGGS:
@@ -326,16 +332,17 @@ def single_dataset_power_fdr(
 		if 'knockoff_kwargs' not in filter_kwargs:
 			filter_kwargs['knockoff_kwargs'] = {}
 		filter_kwargs['knockoff_kwargs']['S'] = S
-		# Note split deals with _smoothed 
-		filter_kwargs['knockoff_kwargs']['method'] = S_method.split('_')[0]
+		filter_kwargs['knockoff_kwargs']['method'] = S_method
 		filter_kwargs['knockoff_kwargs']['_sdp_degen'] = _sdp_degen
 		if 'verbose' not in filter_kwargs['knockoff_kwargs']:
 			filter_kwargs['knockoff_kwargs']['verbose'] = False
 
-		# Pass a few parameters to metro sampler
+		# Possibly pass a few parameters to metro sampler
 		if 'x_dist' in sample_kwargs:
+			# For Ising
 			if 'gibbs_graph' in sample_kwargs:
 				filter_kwargs['knockoff_kwargs']['gibbs_graph'] = sample_kwargs['gibbs_graph']
+			# For t-distributions
 			if str(sample_kwargs['x_dist']).lower() in ['ar1t', 'blockt']:
 				if 'df_t' in sample_kwargs:
 					filter_kwargs['knockoff_kwargs']['df_t'] = sample_kwargs['df_t']
@@ -397,7 +404,7 @@ def single_dataset_power_fdr(
 		# In notebooks this will error
 		pass
 
-	# Output: dict[S_method][pair_agg] to
+	# Output: list of 
 	# [S_method, power, fdp, q, score, score_type, pair_agg, W, Z, tildeZ, selection, seed]
 	return output
 
@@ -487,7 +494,6 @@ def analyze_degen_solns(
 		p = sample_kwargs['p']
 		if isinstance(p, list):
 			p = p[0]
-
 	sample_kwargs['p'] = [p]
 	if 'n' not in sample_kwargs:
 		sample_kwargs['n'] = [
@@ -519,7 +525,7 @@ def analyze_degen_solns(
 	
 	# Check if we are going to ever fit MX knockoffs on the
 	# "ground truth" covariance matrix. If so, we'll memoize
-	# the SDP/mvr results.
+	# the SDP/MVR/MMI results.
 	if 'fixedx' in filter_kwargs:
 		fixedX_vals = filter_kwargs['fixedx']
 		if False in fixedX_vals:
@@ -536,6 +542,7 @@ def analyze_degen_solns(
 			ground_truth = False
 	else:
 		ground_truth = True
+	# Possibly save S-matrices
 	if ground_truth and MX_flag and Sigma is not None:
 		rej_rate = fetch_kwarg(filter_kwargs, 'rej_rate', default=[0])[0]
 		print(f"Storing SDP/MVR results with rej_rate={rej_rate}")
@@ -550,11 +557,9 @@ def analyze_degen_solns(
 		)
 	else:
 		print(f"Not storing SDP/MVR results")
-		# This signals to the further functions which S_methods
-		# to expect to fit
 		S_matrices = None
 
-	### Calculate power of knockoffs for the two different methods
+	### Calculate power of knockoffs for the different methods
 	for filter_vals in filter_product:
 		filter_vals = list(filter_vals)
 		new_filter_kwargs = {
@@ -940,6 +945,8 @@ def main(args):
 		# Increment dgp number
 		dgp_number += 1
 
+	# Print average result (fairly unsophisticated, this is not how we actually
+	# generate our graphs)
 	print(all_results[['power', 'fdp', 'q', 'S_method', 'antisym', 'seed', 'feature_stat']])
 	print(all_results.groupby(['q', 'S_method', 'antisym'])['power', 'fdp'].mean())
 	print("STANDARD DEVIATIONS:")
