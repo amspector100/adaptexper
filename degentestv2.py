@@ -312,20 +312,21 @@ def single_dataset_power_fdr(
 		if _sdp_degen and 'feature_stat' in filter_kwargs:
 			if filter_kwargs['feature_stat'] == 'dlasso':
 				for pair_agg in PAIR_AGGS:
-					output.append([
-						S_method,
-						0,
-						0,
-						q,
-						0,
-						"NULL",
-						pair_agg,
-						np.zeros(p),
-						np.zeros(p),
-						np.zeros(p),
-						np.zeros(p),
-						seed
-					])
+					for q in q_values:
+						output.append([
+							S_method,
+							0,
+							0,
+							q,
+							0,
+							"NULL",
+							pair_agg,
+							np.zeros(p),
+							np.zeros(p),
+							np.zeros(p),
+							np.zeros(p),
+							seed
+						])
 				continue
 
 		# Create knockoff_kwargs
