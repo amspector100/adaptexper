@@ -82,7 +82,7 @@ def dict2keyproduct(dictionary):
 def apply_pool(func, all_inputs, num_processes):
 	""" Utility function"""
 
-	# Don't use the pool object if n-processes is 1
+	# Don't use the pool object if num_processes=1
 	if num_processes == 1:
 		all_outputs = []
 		for inp in all_inputs:
@@ -129,16 +129,27 @@ def fetch_competitor_S(
 				if np.all(Sigma==equicorr):
 					print(f"Sigma is equicorr (rho={rho}), using analytical solution")
 					S_SDP = min(1, 2-2*rho)*np.eye(p)
-					scale_mvr = (1-rho)
-					S_mvr = scale_mvr*np.eye(p)
+					S_mvr = knockadapt.knockoffs.compute_S_matrix(
+						Sigma=Sigma,
+						groups=groups,
+						method='mvr',
+						solver='cd',
+					)
+					S_maxent = knockadapt.knockoffs.compute_S_matrix(
+						Sigma=Sigma,
+						groups=groups,
+						method='maxent',
+						solver='cd'
+					)
 					if rho < 0.5:
-						return {'sdp':S_SDP, 'mvr':S_mvr}
+						return {'sdp':S_SDP, 'mvr':S_mvr, 'maxent':S_maxent}
 					else:
 						S_SDP_perturbed = S_SDP*(0.99)
 						return {
 						'sdp':S_SDP, 
 						'sdp_perturbed':S_SDP_perturbed, 
-						'mvr':S_mvr
+						'mvr':S_mvr,
+						'maxent':S_maxent,
 						}
 
 	### Calculate (A)SDP S-matrix
@@ -946,12 +957,6 @@ def main(args):
 		# Increment dgp number
 		dgp_number += 1
 
-	# Print average result (fairly unsophisticated, this is not how we actually
-	# generate our graphs)
-	#print(all_results[['power', 'fdp', 'q', 'S_method', 'antisym', 'seed', 'feature_stat']])
-	#print(all_results.groupby(['q', 'S_method', 'antisym'])['power', 'fdp'].mean())
-	#print("STANDARD DEVIATIONS:")
-	#print(all_results.groupby(['q', 'S_method', 'antisym'])['power', 'fdp'].std() / np.sqrt(reps))
 	return all_results
 
 if __name__ == '__main__':
