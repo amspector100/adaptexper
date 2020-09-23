@@ -114,8 +114,25 @@ def fetch_competitor_S(
 		gammas[0] += 0.001
 		gammas[-1] -= 0.001
 		S_matrices = {
-			f'S{gamma}':gamma*np.eye(p) for gamma in gammas
+			f'S{np.around(gamma, 3)}':gamma*np.eye(p) for gamma in gammas
 		}
+		S_matrices['mvr'] = knockadapt.knockoffs.compute_S_matrix(
+			Sigma=Sigma,
+			groups=groups,
+			method='mvr',
+			solver='cd',
+		)
+		S_matrices['maxent'] = knockadapt.knockoffs.compute_S_matrix(
+			Sigma=Sigma,
+			groups=groups,
+			method='maxent',
+			solver='cd'
+		)
+		S_matrices['sdp'] = knockadapt.knockoffs.compute_S_matrix(
+			Sigma=Sigma,
+			groups=groups,
+			method='sdp',
+		)
 		return S_matrices
 
 	### Special case: detect if Sigma is equicorrelated,
@@ -236,6 +253,7 @@ def single_dataset_power_fdr(
 	S_matrices=None,
 	time0=None,
 	compute_maxent=False,
+	S_curve=False,
 ):
 	""" 
 	Knockoff kwargs should be included in filter_kwargs
@@ -303,6 +321,7 @@ def single_dataset_power_fdr(
 			rej_rate=rej_rate,
 			verbose=verbose,
 			compute_maxent=compute_maxent,
+			S_curve=S_curve,
 			**kwargs
 		)
 
@@ -433,6 +452,7 @@ def calc_power_and_fdr(
 	seed_start=0,
 	S_matrices={'sdp':None, 'mvr':None},
 	compute_maxent=False,
+	S_curve=False,
 ):
 
 	# Fetch nonnulls
@@ -452,6 +472,7 @@ def calc_power_and_fdr(
 		S_matrices=S_matrices,
 		time0=time0,
 		compute_maxent=compute_maxent,
+		S_curve=S_curve,
 	)
 	# (Possibly) apply multiprocessing
 	all_inputs = list(range(seed_start, seed_start+reps))
@@ -632,6 +653,7 @@ def analyze_degen_solns(
 					time0=time0,
 					S_matrices=S_matrices,
 					compute_maxent=compute_maxent,
+					S_curve=S_curve,
 				)
 
 				# Loop through antisymmetric functions and S matrices
