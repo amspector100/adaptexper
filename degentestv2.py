@@ -133,6 +133,7 @@ def fetch_competitor_S(
 			groups=groups,
 			method='sdp',
 		)
+		S_matrices['sdp_perturbed'] = 0.99*S_matrices['sdp']
 		return S_matrices
 
 	### Special case: detect if Sigma is equicorrelated,
