@@ -144,7 +144,7 @@ def fetch_competitor_S(
 			rho = Sigma[0, 1]
 			if rho >= 0:
 				equicorr = rho*np.ones((p, p)) + (1-rho)*np.eye(p)
-				if np.all(Sigma==equicorr):
+				if np.all(np.abs(Sigma-equicorr) < 1e-10):
 					print(f"Sigma is equicorr (rho={rho}), using analytical solution")
 					S_SDP = min(1, 2-2*rho)*np.eye(p)
 					S_mvr = knockadapt.knockoffs.compute_S_matrix(
