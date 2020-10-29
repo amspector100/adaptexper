@@ -133,6 +133,11 @@ def fetch_competitor_S(
 			groups=groups,
 			method='sdp',
 		)
+		S_matrices['ci'] = knockadapt.knockoffs.compute_S_matrix(
+			Sigma=Sigma,
+			groups=groups,
+			method='ciknock',
+		)
 		S_matrices['sdp_perturbed'] = 0.99*S_matrices['sdp']
 		return S_matrices
 
@@ -159,8 +164,17 @@ def fetch_competitor_S(
 						method='maxent',
 						solver='cd'
 					)
+					S_ciknock = knockadapt.knockoffs.compute_S_matrix(
+						Sigma=Sigma,
+						method='ciknock',
+					)
 					if rho < 0.5:
-						return {'sdp':S_SDP, 'mvr':S_mvr, 'maxent':S_maxent}
+						return {
+						'sdp':S_SDP,
+						'mvr':S_mvr,
+						'maxent':S_maxent,
+						'ci':S_ciknock
+						}
 					else:
 						S_SDP_perturbed = S_SDP*(0.99)
 						return {
@@ -168,6 +182,7 @@ def fetch_competitor_S(
 						'sdp_perturbed':S_SDP_perturbed, 
 						'mvr':S_mvr,
 						'maxent':S_maxent,
+						'ci':S_ciknock,
 						}
 
 	### Calculate (A)SDP S-matrix
@@ -214,6 +229,10 @@ def fetch_competitor_S(
 			**kwargs
 		)
 		S_matrices[new_method] = S_MRC
+	S_matrices['ci'] = knockadapt.knockoffs.compute_S_matrix(
+		Sigma=Sigma,
+		method='ciknock',
+	)
 	if verbose:
 		print(f'Finished computing MRC matrices, time is {time.time() - time0}')
 
