@@ -99,7 +99,6 @@ def fetch_competitor_S(
 	time0,
 	S_curve=False,
 	verbose=False,
-	compute_maxent=False,
 	**kwargs
 ):
 	"""
@@ -155,38 +154,33 @@ def fetch_competitor_S(
 				if np.all(np.abs(Sigma-equicorr) < 1e-10):
 					print(f"Sigma is equicorr (rho={rho}), using analytical solution")
 					S_SDP = min(1, 2-2*rho)*np.eye(p)
-					S_mvr = knockadapt.knockoffs.compute_S_matrix(
-						Sigma=Sigma,
-						groups=groups,
-						method='mvr',
-						solver='cd',
-					)
-					S_maxent = knockadapt.knockoffs.compute_S_matrix(
-						Sigma=Sigma,
-						groups=groups,
-						method='maxent',
-						solver='cd'
-					)
-					S_ciknock = knockadapt.knockoffs.compute_S_matrix(
-						Sigma=Sigma,
-						method='ciknock',
-					)
-					if rho < 0.5:
-						return {
-						'sdp':S_SDP,
-						'mvr':S_mvr,
-						'maxent':S_maxent,
-						'ci':S_ciknock
-						}
+					S_matrices = {'sdp':S_SDP}
+					# Compute exact solution for smaller p
+					if p < 1000:
+						S_matrices['mvr'] = knockadapt.knockoffs.compute_S_matrix(
+							Sigma=Sigma,
+							groups=groups,
+							method='mvr',
+							solver='cd',
+						)
+						S_matrices['mmi'] = knockadapt.knockoffs.compute_S_matrix(
+							Sigma=Sigma,
+							groups=groups,
+							method='maxent',
+							solver='cd'
+						)
+						S_matrices['ci'] = knockadapt.knockoffs.compute_S_matrix(
+							Sigma=Sigma,
+							method='ciknock',
+						)
+					# Else, asymptotically these methods are the same
 					else:
-						S_SDP_perturbed = S_SDP*(0.99)
-						return {
-						'sdp':S_SDP, 
-						'sdp_perturbed':S_SDP_perturbed, 
-						'mvr':S_mvr,
-						'maxent':S_maxent,
-						'ci':S_ciknock,
-						}
+						S_matrices['mvr'] = (1-rho)*np.eye(p)
+					if rho < 0.5:
+						return S_matrices
+					else:
+						S_matrices['sdp_perturbed'] = S_SDP*(0.99)
+						return S_matrices
 
 	### Calculate (A)SDP S-matrix
 	if time0 is None:
@@ -214,13 +208,9 @@ def fetch_competitor_S(
 		kwargs['rej_rate'] = rej_rate
 	for new_method in ['mvr','maxent']:
 
-		# Sometimes, we only compute MVR and not maxent
-		if not compute_maxent and new_method == 'maxent':
-			continue
-
 		# Choose between projected gradient decent and coord descent
 		# solvers
-		if compute_maxent and rej_rate != 0:
+		if new_method == 'maxent' and rej_rate != 0:
 			solver = 'psgd'
 		else:
 			solver = 'cd'
@@ -275,7 +265,6 @@ def single_dataset_power_fdr(
 	},
 	S_matrices=None,
 	time0=None,
-	compute_maxent=False,
 	S_curve=False,
 ):
 	""" 
@@ -343,7 +332,6 @@ def single_dataset_power_fdr(
 			time0=time0,
 			rej_rate=rej_rate,
 			verbose=verbose,
-			compute_maxent=compute_maxent,
 			S_curve=S_curve,
 			**kwargs
 		)
@@ -474,7 +462,6 @@ def calc_power_and_fdr(
 	filter_kwargs={},
 	seed_start=0,
 	S_matrices={'sdp':None, 'mvr':None},
-	compute_maxent=False,
 	S_curve=False,
 ):
 
@@ -494,7 +481,6 @@ def calc_power_and_fdr(
 		filter_kwargs=filter_kwargs,
 		S_matrices=S_matrices,
 		time0=time0,
-		compute_maxent=compute_maxent,
 		S_curve=S_curve,
 	)
 	# (Possibly) apply multiprocessing
@@ -529,7 +515,6 @@ def analyze_degen_solns(
 	time0=None,
 	S_curve=False,
 	storew=True,
-	compute_maxent=False,
 	):
 	"""
 	:param dgp_number: A number corresponding to which dgp
@@ -609,7 +594,6 @@ def analyze_degen_solns(
 			S_curve=S_curve,
 			rej_rate=rej_rate,
 			verbose=True,
-			compute_maxent=compute_maxent,
 		)
 	else:
 		print(f"Not storing SDP/MVR results")
@@ -675,7 +659,6 @@ def analyze_degen_solns(
 					seed_start=seed_start,
 					time0=time0,
 					S_matrices=S_matrices,
-					compute_maxent=compute_maxent,
 					S_curve=S_curve,
 				)
 
@@ -729,7 +712,6 @@ def parse_args(args):
 	special_keys = [
 		'reps', 'num_processes', 'seed_start', 'description',
 		's_curve', 'resample_beta', 'resample_sigma', 'storew',
-		'compute_maxent'
 	]
 	key_types = ['dgp', 'sample', 'filter', 'fstat']
 	all_kwargs = {ktype:{} for ktype in key_types}
@@ -845,7 +827,6 @@ def main(args):
 	resample_beta = fetch_kwarg(sample_kwargs, 'resample_beta', default=[True])[0]
 	resample_sigma = fetch_kwarg(sample_kwargs, 'resample_sigma', default=[True])[0]
 	storew = fetch_kwarg(sample_kwargs, 'storew', default=[False])[0]
-	compute_maxent = fetch_kwarg(sample_kwargs, 'compute_maxent', default=[True])[0]
 	print(f"S_curve flag = {S_curve}")
 	print(f"DGP kwargs are {dgp_kwargs}")
 	print(f"Sample kwargs are {sample_kwargs}")
@@ -976,7 +957,6 @@ def main(args):
 			time0=time0,
 			S_curve=S_curve,
 			storew=storew,
-			compute_maxent=compute_maxent
 		)
 		for key in dgp_keys:
 			if key in sample_kwargs:
