@@ -132,13 +132,16 @@ def fetch_competitor_S(
 			Sigma=Sigma,
 			groups=groups,
 			method='sdp',
+			tol=1e-10,
 		)
 		S_matrices['ci'] = knockadapt.knockoffs.compute_S_matrix(
 			Sigma=Sigma,
 			groups=groups,
 			method='ciknock',
 		)
-		S_matrices['sdp_perturbed'] = 0.99*S_matrices['sdp']
+		# Create perturbed option when G_SDP is low rank
+		if Sigma[0,1] >= 0.5:
+			S_matrices['sdp_perturbed'] = 0.99*S_matrices['sdp']
 		return S_matrices
 
 	### Special case: detect if Sigma is equicorrelated,
