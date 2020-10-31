@@ -27,7 +27,7 @@ from functools import partial
 # Global: the set of antisymmetric functions we use
 PAIR_AGGS = ['cd', 'sm']
 # q-values to evaluate for
-q_values = [0.05, 0.1, 0.15, 0.2]
+q_values = 0.05*np.arange(1, 21)
 # Degrees of freedom for t-distributions
 DEFAULT_DF_T = knockadapt.graphs.DEFAULT_DF_T
 
